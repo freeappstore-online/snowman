@@ -1,0 +1,20 @@
+{
+  "name": "freeappstore-create",
+  "private": true,
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "dev": "pnpm --filter @freeappstore/web dev",
+    "build": "pnpm --filter @freeappstore/web build",
+    "preview": "pnpm --filter @freeappstore/web preview",
+    "typecheck": "pnpm --filter @freeappstore/web exec tsc -b",
+    "test": "pnpm --filter @freeappstore/web test"
+  }
+}
