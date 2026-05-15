@@ -130,11 +130,14 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
   }, []);
 
   const filtered: Country[] = query.trim()
-    ? COUNTRIES.filter(c => c.name.toLowerCase().includes(query.toLowerCase())).slice(0, 6)
+    ? COUNTRIES.filter(c => c.name.toLowerCase().startsWith(query.toLowerCase())).slice(0, 6)
     : [];
 
   function handleSnowNearMe() {
     if (!navigator.geolocation || locating) return;
+    setShowAbout(false);
+    setQuery('');
+    setSearchOpen(false);
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => { panTo(coords.latitude, coords.longitude, 6); setLocating(false); },
@@ -154,6 +157,7 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
       autoFocus={autoFocus}
       value={query}
       onChange={e => setQuery(e.target.value)}
+      onFocus={() => setShowAbout(false)}
       placeholder="Search countries…"
       style={{
         background: 'rgba(255,255,255,0.07)',
@@ -215,7 +219,7 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
         <button style={navBtn} onClick={handleSnowNearMe}>
           {locating ? '…' : 'Snow Near Me'}
         </button>
-        <button style={navBtn} onClick={() => setShowAbout(v => !v)}>
+        <button style={navBtn} onClick={() => { setShowAbout(v => !v); setQuery(''); setSearchOpen(false); }}>
           About
         </button>
 
@@ -232,7 +236,7 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
             </div>
           ) : (
             <button
-              onClick={() => setSearchOpen(v => !v)}
+              onClick={() => { setSearchOpen(v => !v); setShowAbout(false); }}
               style={{ ...navBtn, padding: '0 0.1rem', display: 'flex', alignItems: 'center' }}
               aria-label="Search countries"
             >
