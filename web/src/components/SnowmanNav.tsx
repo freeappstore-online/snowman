@@ -182,6 +182,7 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
     saveToHistory(c.id);
     setQuery('');
     setSearchOpen(false);
+    setActiveIndex(-1);
   }
 
   const searchInput = (autoFocus = false, fullWidth = false) => (
@@ -197,7 +198,7 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
         else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, -1)); }
         else if (e.key === 'Enter') { e.preventDefault(); const c = flatItems[activeIndex]; if (c) selectCountry(c); }
       }}
-      placeholder="Search countries…"
+      placeholder={flatItems[activeIndex]?.name ?? 'Search countries…'}
       style={{
         background: '#1c1c1e',
         border: '1px solid rgba(255,255,255,0.12)',
