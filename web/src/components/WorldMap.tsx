@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { forwardRef, useImperativeHandle, useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import * as topojson from 'topojson-client';
 import type { Topology, GeometryCollection } from 'topojson-specification';
 import type { FeatureCollection, Feature, Polygon, MultiPolygon } from 'geojson';
@@ -62,7 +62,11 @@ interface Props {
   loading: boolean;
 }
 
-export function WorldMap({ snowSet, loading }: Props) {
+export interface WorldMapHandle {
+  panTo: (lat: number, lon: number, zoom?: number) => void;
+}
+
+export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, loading }, ref) {
   const [countries, setCountries] = useState<FeatureCollection<Polygon | MultiPolygon> | null>(null);
   const [mapError, setMapError] = useState(false);
   const [transform, setTransform] = useState<XYK>({ x: 0, y: 0, k: 1 });
@@ -107,6 +111,14 @@ export function WorldMap({ snowSet, loading }: Props) {
     const ctm = svgRef.current?.getScreenCTM();
     return ctm ? ctm.a : 1;
   }, []);
+
+  useImperativeHandle(ref, () => ({
+    panTo(lat, lon, zoom = 5) {
+      const [svgX, svgY] = project(lon, lat);
+      const k = Math.max(MIN_K, Math.min(MAX_K, zoom));
+      applyTransform({ x: W / 2 - svgX * k, y: W / 2 - svgY * k, k });
+    },
+  }), [applyTransform]);
 
   const cancelInertia = useCallback(() => {
     if (inertiaRafRef.current !== null) {
@@ -308,7 +320,7 @@ export function WorldMap({ snowSet, loading }: Props) {
       <div style={{
         position: 'absolute', bottom: 80, right: 16,
         display: 'flex', flexDirection: 'column',
-        background: 'rgba(15,15,15,0.75)', backdropFilter: 'blur(8px)',
+        background: 'rgba(15,15,15,0.88)',
         border: '1px solid rgba(255,255,255,0.12)', borderRadius: '0.5rem',
         overflow: 'hidden',
       }}>
@@ -340,7 +352,7 @@ export function WorldMap({ snowSet, loading }: Props) {
       {/* Legend */}
       <aside style={{
         position: 'absolute', bottom: 16, left: 16,
-        background: 'rgba(15,15,15,0.75)', backdropFilter: 'blur(8px)',
+        background: 'rgba(15,15,15,0.88)',
         border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.75rem',
         padding: '0.5rem 0.75rem', display: 'flex', flexDirection: 'column', gap: 6,
       }}>
@@ -370,4 +382,4 @@ export function WorldMap({ snowSet, loading }: Props) {
       )}
     </div>
   );
-}
+});
