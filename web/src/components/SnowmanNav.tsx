@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 
 const COUNTRIES = [
   { id: '004', name: 'Afghanistan',     lat: 33.93,  lon:  67.71 },
@@ -110,7 +110,16 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
   const [locating, setLocating]     = useState(false);
   const [wide, setWide]             = useState(() => window.innerWidth >= 560);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [history, setHistory] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('snowman-search-history') || '[]'); }
+    catch { return []; }
+  });
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Reset keyboard selection when results change
+  useEffect(() => { setActiveIndex(-1); }, [query]);
 
   useEffect(() => {
     const update = () => setWide(window.innerWidth >= 560);
@@ -129,9 +138,32 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const filtered: Country[] = query.trim()
-    ? COUNTRIES.filter(c => c.name.toLowerCase().startsWith(query.toLowerCase())).slice(0, 6)
-    : [];
+  function saveToHistory(id: string) {
+    setHistory(prev => {
+      const next = [id, ...prev.filter(h => h !== id)].slice(0, 10);
+      localStorage.setItem('snowman-search-history', JSON.stringify(next));
+      return next;
+    });
+  }
+
+  // Sections for dropdown: [{label?, items}]
+  const dropdownSections = useMemo(() => {
+    if (query.trim()) {
+      const results = COUNTRIES.filter(c => c.name.toLowerCase().startsWith(query.toLowerCase())).slice(0, 6);
+      return results.length ? [{ items: results }] : [];
+    }
+    if (!searchFocused && !(searchOpen && !wide)) return [];
+    const historyIds = new Set(history);
+    const historyItems = history.map(id => COUNTRIES.find(c => c.id === id)).filter((c): c is Country => !!c);
+    const snowItems = COUNTRIES.filter(c => snowSet.has(c.id) && !historyIds.has(c.id)).slice(0, 6);
+    const sections: { label?: string; items: Country[] }[] = [];
+    if (historyItems.length) sections.push({ label: 'History', items: historyItems });
+    if (snowItems.length) sections.push({ label: 'Snow Available', items: snowItems });
+    return sections;
+  }, [query, searchFocused, searchOpen, wide, history, snowSet]);
+
+  // Flat list for keyboard navigation
+  const flatItems = useMemo(() => dropdownSections.flatMap(s => s.items), [dropdownSections]);
 
   function handleSnowNearMe() {
     if (!navigator.geolocation || locating) return;
@@ -147,37 +179,69 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
 
   function selectCountry(c: Country) {
     panTo(c.lat, c.lon, 5);
+    saveToHistory(c.id);
     setQuery('');
     setSearchOpen(false);
   }
 
-  const searchInput = (autoFocus = false) => (
+  const searchInput = (autoFocus = false, fullWidth = false) => (
     <input
       ref={autoFocus ? undefined : inputRef}
       autoFocus={autoFocus}
       value={query}
       onChange={e => setQuery(e.target.value)}
-      onFocus={() => setShowAbout(false)}
+      onFocus={() => { setShowAbout(false); setSearchFocused(true); }}
+      onBlur={() => setSearchFocused(false)}
+      onKeyDown={e => {
+        if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => Math.min(i + 1, flatItems.length - 1)); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, -1)); }
+        else if (e.key === 'Enter') { e.preventDefault(); const c = flatItems[activeIndex]; if (c) selectCountry(c); }
+      }}
       placeholder="Search countries…"
       style={{
-        background: 'rgba(255,255,255,0.07)',
+        background: '#1c1c1e',
         border: '1px solid rgba(255,255,255,0.12)',
         borderRadius: '0.65rem', outline: 'none',
         color: '#f5f5f5', fontSize: '0.78rem',
         padding: '0.3rem 0.7rem',
-        width: 185, boxSizing: 'border-box',
+        width: fullWidth ? '100%' : 185, boxSizing: 'border-box',
       }}
     />
   );
 
-  const dropdownItem = (c: Country) => (
+  function clearHistory() {
+    setHistory([]);
+    localStorage.removeItem('snowman-search-history');
+  }
+
+  const sectionLabel = (text: string, showClear = false) => (
+    <div style={{ padding: '0.35rem 0.85rem 0.2rem', fontSize: '0.67rem', fontWeight: 700, color: '#71717a', letterSpacing: '0.06em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <span>{text}</span>
+      {showClear && (
+        <button
+          onMouseDown={e => e.preventDefault()}
+          onClick={clearHistory}
+          onMouseEnter={e => (e.currentTarget.style.color = '#a1a1aa')}
+          onMouseLeave={e => (e.currentTarget.style.color = '#52525b')}
+          style={{ background: 'none', border: 'none', color: '#52525b', fontSize: '0.67rem', fontWeight: 600, cursor: 'pointer', padding: 0, textTransform: 'uppercase', letterSpacing: '0.06em', transition: 'color 0.15s' }}
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  );
+
+  const dropdownItem = (c: Country, flatIdx: number) => (
     <button
       key={c.id}
       onClick={() => selectCountry(c)}
+      onMouseEnter={() => setActiveIndex(flatIdx)}
+      onMouseLeave={() => setActiveIndex(-1)}
       style={{
         display: 'flex', alignItems: 'center', gap: '0.5rem',
         width: '100%', padding: '0.42rem 0.85rem',
-        background: 'none', border: 'none',
+        background: flatIdx === activeIndex ? 'rgba(255,255,255,0.08)' : 'none',
+        border: 'none',
         borderTop: '1px solid rgba(255,255,255,0.06)',
         color: '#d4d4d8', fontSize: '0.8rem',
         cursor: 'pointer', textAlign: 'left',
@@ -187,6 +251,17 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
       {c.name}
     </button>
   );
+
+  // Render all sections with flat index for keyboard nav
+  function renderSections(offset = 0) {
+    let idx = offset;
+    return dropdownSections.map((section, si) => (
+      <div key={si}>
+        {section.label && sectionLabel(section.label, section.label === 'History')}
+        {section.items.map(c => dropdownItem(c, idx++))}
+      </div>
+    ));
+  }
 
   return (
     <>
@@ -228,9 +303,9 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
           {wide ? (
             <div style={{ position: 'relative' }}>
               {searchInput()}
-              {filtered.length > 0 && (
-                <div style={{ ...glass, position: 'absolute', top: 'calc(100% + 6px)', right: 0, borderRadius: '0.85rem', minWidth: '100%', zIndex: 300, overflow: 'hidden' }}>
-                  {filtered.map(dropdownItem)}
+              {dropdownSections.length > 0 && (
+                <div onMouseDown={e => e.preventDefault()} style={{ ...glass, position: 'absolute', top: 'calc(100% + 6px)', right: 0, borderRadius: '0.85rem', minWidth: '100%', zIndex: 300, overflow: 'hidden', maxHeight: 'calc(100dvh - 80px)', overflowY: 'auto' }}>
+                  {renderSections()}
                 </div>
               )}
             </div>
@@ -249,18 +324,31 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
         </div>
       </header>
 
+      {/* Wide search backdrop — closes dropdown when clicking outside */}
+      {wide && dropdownSections.length > 0 && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => { setSearchFocused(false); inputRef.current?.blur(); }} />
+      )}
+
       {/* Narrow search overlay (drops below the pill) */}
+      {!wide && searchOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 198 }} onClick={() => setSearchOpen(false)} />
+      )}
       {!wide && searchOpen && (
         <div style={{
           ...glass,
           position: 'absolute', top: 64, left: '50%',
           transform: 'translateX(-50%)',
           width: 'min(96vw, 420px)', zIndex: 199,
-          borderRadius: '1rem', overflow: 'hidden',
-          padding: '0.5rem',
+          borderRadius: '1rem',
+          maxHeight: 'calc(100dvh - 80px)',
+          display: 'flex', flexDirection: 'column',
         }}>
-          {searchInput(true)}
-          {filtered.map(dropdownItem)}
+          <div style={{ padding: '0.5rem 0.5rem 0.35rem', flexShrink: 0 }}>
+            {searchInput(true, true)}
+          </div>
+          <div style={{ overflowY: 'auto' }}>
+            {renderSections()}
+          </div>
         </div>
       )}
 
