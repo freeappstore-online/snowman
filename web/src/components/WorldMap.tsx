@@ -2,12 +2,40 @@ import React, { forwardRef, useImperativeHandle, useEffect, useRef, useState, us
 import * as topojson from 'topojson-client';
 import type { Topology, GeometryCollection } from 'topojson-specification';
 import type { FeatureCollection, Feature, Polygon, MultiPolygon } from 'geojson';
+import { useStateSnow } from '../hooks/useStateSnow';
 
-const WORLD_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json';
+const WORLD_URL  = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json';
+const STATES_URL = '/states.json';
 const W = 1000;
 const MIN_K = 1;
 const MAX_K = 40;
+const MIN_FETCH_K = 2.0; // pre-load states.json before any threshold is hit
 
+
+// Maps adm0_a3 (3-letter Natural Earth code) → numeric ISO used in snowSet / COUNTRIES
+const ADM0_TO_NUMERIC: Record<string, string> = {
+  AFG: '004', ALB: '008', DZA: '012', AGO: '024', ARG: '032',
+  AUS: '036', AUT: '040', BGD: '050', BEL: '056', BTN: '064',
+  BOL: '068', BRA: '076', BGR: '100', MMR: '104', KHM: '116',
+  CMR: '120', CAN: '124', LKA: '144', CHL: '152', CHN: '156',
+  COL: '170', COD: '180', HRV: '191', CUB: '192', CZE: '203',
+  DNK: '208', ECU: '218', EGY: '818', ETH: '231', FIN: '246',
+  FRA: '250', GEO: '268', DEU: '276', GHA: '288', GRC: '300',
+  GTM: '320', HTI: '332', HND: '340', HUN: '348', ISL: '352',
+  IND: '356', IDN: '360', IRN: '364', IRQ: '368', IRL: '372',
+  ISR: '376', ITA: '380', JPN: '392', KAZ: '398', KEN: '404',
+  KGZ: '417', PRK: '408', KOR: '410', LAO: '418', LBY: '434',
+  LTU: '440', MEX: '484', MNG: '496', MAR: '504', NPL: '524',
+  NLD: '528', NZL: '554', NGA: '566', NOR: '578', PAK: '586',
+  PER: '604', PHL: '608', POL: '616', PRT: '620', ROU: '642',
+  RUS: '643', SAU: '682', ZAF: '710', ESP: '724', TJK: '762',
+  TZA: '834', SWE: '752', CHE: '756', SYR: '760', THA: '764',
+  TUR: '792', UKR: '804', UGA: '800', ARE: '784', GBR: '826',
+  USA: '840', URY: '858', UZB: '860', VEN: '862', VNM: '704',
+  ATA: '010', GRL: '304', SDN: '729', SSD: '728',
+};
+
+// ─── Projection helpers ────────────────────────────────────────────────────
 function project(lon: number, lat: number): [number, number] {
   const x = ((lon + 180) / 360) * W;
   const c = Math.max(-85.051, Math.min(85.051, lat));
@@ -47,7 +75,50 @@ function featureToD(f: Feature<Polygon | MultiPolygon>): string {
   return g.coordinates.flatMap(p => p.map(r => ringToD(r))).join('');
 }
 
+// Returns lat/lon bounds of the visible viewport with an optional margin factor
+function getViewportBounds(tx: number, ty: number, k: number, margin = 1.6) {
+  const cW = window.innerWidth;
+  const cH = window.innerHeight;
+  let svgW: number, svgH: number, svgXOff: number, svgYOff: number;
+  if (cW >= cH) {
+    svgW = W; svgH = W * cH / cW;
+    svgXOff = 0; svgYOff = (W - svgH) / 2;
+  } else {
+    svgH = W; svgW = W * cW / cH;
+    svgXOff = (W - svgW) / 2; svgYOff = 0;
+  }
+  const cx = svgXOff + svgW / 2;
+  const cy = svgYOff + svgH / 2;
+  const hw = (svgW / 2) * margin;
+  const hh = (svgH / 2) * margin;
+
+  const groupLeft   = (cx - hw - tx) / k;
+  const groupRight  = (cx + hw - tx) / k;
+  const groupTop    = (cy - hh - ty) / k;
+  const groupBottom = (cy + hh - ty) / k;
+
+  const normLeft = ((groupLeft % W) + W) % W;
+  const lonMin   = (normLeft / W) * 360 - 180;
+  const lonMax   = lonMin + (groupRight - groupLeft) / W * 360;
+
+  const unLat = (gy: number) => {
+    const yn = Math.max(0.001, Math.min(0.999, gy / W));
+    return Math.atan(Math.sinh(Math.PI * (1 - 2 * yn))) * 180 / Math.PI;
+  };
+
+  return {
+    lonMin: Math.max(-180, lonMin),
+    lonMax: Math.min(180, lonMax),
+    latMin: unLat(Math.min(0.999 * W, groupBottom)),
+    latMax: unLat(Math.max(0.001, groupTop)),
+  };
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────
 interface XYK { x: number; y: number; k: number }
+
+interface StateProperties { a: string; n: string; t: number; g: number }
+type StateFeature = Feature<Polygon | MultiPolygon, StateProperties>;
 
 function computeClip(cW: number, cH: number) {
   if (cW >= cH) {
@@ -57,36 +128,110 @@ function computeClip(cW: number, cH: number) {
   return { yTop: 0, yBot: W };
 }
 
+interface FocusedCountry { id: string; name: string; lat: number; lon: number }
+
 interface Props {
   snowSet: Set<string>;
   loading: boolean;
+  focusedCountry: FocusedCountry | null;
+  onClearFocus: () => void;
 }
 
 export interface WorldMapHandle {
   panTo: (lat: number, lon: number, zoom?: number) => void;
 }
 
-export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, loading }, ref) {
-  const [countries, setCountries] = useState<FeatureCollection<Polygon | MultiPolygon> | null>(null);
-  const [mapError, setMapError] = useState(false);
-  const [transform, setTransform] = useState<XYK>({ x: 0, y: 0, k: 1 });
-  const [dragging, setDragging] = useState(false);
+export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, loading, focusedCountry, onClearFocus }, ref) {
+  const focusedCountryId = focusedCountry?.id ?? null;
+  const [countries,  setCountries]  = useState<FeatureCollection<Polygon | MultiPolygon> | null>(null);
+  const [discoveredSnowCountries, setDiscoveredSnowCountries] = useState<Set<string>>(new Set());
+  const [statesData, setStatesData] = useState<FeatureCollection<Polygon | MultiPolygon, StateProperties> | null>(null);
+  const [mapError,   setMapError]   = useState(false);
+  const [transform,  setTransform]  = useState<XYK>({ x: 0, y: 0, k: 1 });
+  const [dragging,   setDragging]   = useState(false);
+  const [viewportBounds, setViewportBounds] = useState<ReturnType<typeof getViewportBounds> | null>(null);
+
+  const onClearFocusRef = useRef(onClearFocus);
+  useEffect(() => { onClearFocusRef.current = onClearFocus; }, [onClearFocus]);
 
   const transformRef = useRef<XYK>({ x: 0, y: 0, k: 1 });
-  const clipRef = useRef(computeClip(window.innerWidth, window.innerHeight));
-  const dragStart = useRef<{ cx: number; cy: number; tx: number; ty: number } | null>(null);
-  const pinchRef = useRef<{ dist: number } | null>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
-  const velocityRef = useRef({ vx: 0, vy: 0 });
-  const lastMoveRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const clipRef      = useRef(computeClip(window.innerWidth, window.innerHeight));
+  const dragStart    = useRef<{ cx: number; cy: number; tx: number; ty: number } | null>(null);
+  const pinchRef     = useRef<{ dist: number } | null>(null);
+  const svgRef       = useRef<SVGSVGElement>(null);
+  const velocityRef  = useRef({ vx: 0, vy: 0 });
+  const lastMoveRef  = useRef<{ x: number; y: number; t: number } | null>(null);
   const inertiaRafRef = useRef<number | null>(null);
+  const statesLoadedRef = useRef(false);
 
+  // ── Resize ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const update = () => { clipRef.current = computeClip(window.innerWidth, window.innerHeight); };
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
   }, []);
 
+  // ── Load country data ────────────────────────────────────────────────────
+  useEffect(() => {
+    fetch(WORLD_URL)
+      .then(r => { if (!r.ok) throw new Error(); return r.json() as Promise<Topology>; })
+      .then(topo => {
+        const fc = topojson.feature(
+          topo,
+          topo.objects['countries'] as GeometryCollection<Record<string, unknown>>
+        ) as FeatureCollection<Polygon | MultiPolygon>;
+        setCountries(fc);
+      })
+      .catch(() => setMapError(true));
+  }, []);
+
+  // ── Lazy-load state/province data ────────────────────────────────────────
+  useEffect(() => {
+    if (transform.k < MIN_FETCH_K || statesLoadedRef.current) return;
+    statesLoadedRef.current = true;
+    fetch(STATES_URL)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((topo: Topology) => {
+        const key = (Object.keys(topo.objects) as string[])[0] ?? 'states';
+        const fc = topojson.feature(
+          topo,
+          topo.objects[key] as GeometryCollection<Record<string, unknown>>
+        ) as unknown as FeatureCollection<Polygon | MultiPolygon, StateProperties>;
+        setStatesData(fc);
+      })
+      .catch(err => console.error('[states] failed to load:', err));
+  }, [transform.k]);
+
+  // ── Debounce viewport bounds for state visibility ─────────────────────────
+  useEffect(() => {
+    const { k, x, y } = transform;
+    if (k < MIN_FETCH_K) { setViewportBounds(null); return; }
+    if (dragging) return;
+    const timer = setTimeout(() => setViewportBounds(getViewportBounds(x, y, k)), 500);
+    return () => clearTimeout(timer);
+  }, [transform, dragging]);
+
+  // ── Clear focus when focused country pans off screen ─────────────────────
+  const focusTimeRef = useRef(0);
+
+  useEffect(() => {
+    if (focusedCountry) focusTimeRef.current = Date.now();
+  }, [focusedCountryId]);
+
+  useEffect(() => {
+    if (!focusedCountry || !viewportBounds) return;
+    if (Date.now() - focusTimeRef.current < 1000) return;
+    const { lat, lon } = focusedCountry;
+    const { lonMin, lonMax, latMin, latMax } = viewportBounds;
+    const pad = 40;
+    const inLat = lat >= latMin - pad && lat <= latMax + pad;
+    const inLon = lonMax <= 180
+      ? lon >= lonMin - pad && lon <= lonMax + pad
+      : (lon >= lonMin - pad && lon <= 180) || (lon >= -180 && lon <= lonMax - 360 + pad);
+    if (!inLat || !inLon) onClearFocusRef.current();
+  }, [viewportBounds, focusedCountry]);
+
+  // ── Pan/zoom helpers ─────────────────────────────────────────────────────
   const applyTransform = useCallback((t: XYK) => {
     const k = Math.max(MIN_K, Math.min(MAX_K, t.k));
     const ww = W * k;
@@ -152,20 +297,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     applyTransform({ x: svgX - (svgX - prev.x) * ratio, y: svgY - (svgY - prev.y) * ratio, k: newK });
   }, [applyTransform]);
 
-  useEffect(() => {
-    fetch(WORLD_URL)
-      .then(r => { if (!r.ok) throw new Error(); return r.json() as Promise<Topology>; })
-      .then(topo => {
-        const fc = topojson.feature(
-          topo,
-          topo.objects['countries'] as GeometryCollection<Record<string, unknown>>
-        ) as FeatureCollection<Polygon | MultiPolygon>;
-        setCountries(fc);
-      })
-      .catch(() => setMapError(true));
-  }, []);
-
-  // Non-passive wheel zoom
+  // ── Non-passive wheel ────────────────────────────────────────────────────
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
@@ -178,7 +310,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     return () => svg.removeEventListener('wheel', handler);
   }, [zoomAt, clientToSvg]);
 
-  // Non-passive touch handlers (React attaches touch as passive by default)
+  // ── Non-passive touch ────────────────────────────────────────────────────
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
@@ -228,13 +360,14 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     };
 
     svg.addEventListener('touchstart', onTouchStart, { passive: false });
-    svg.addEventListener('touchmove', onTouchMove, { passive: false });
+    svg.addEventListener('touchmove',  onTouchMove,  { passive: false });
     return () => {
       svg.removeEventListener('touchstart', onTouchStart);
-      svg.removeEventListener('touchmove', onTouchMove);
+      svg.removeEventListener('touchmove',  onTouchMove);
     };
   }, [cancelInertia, applyTransform, zoomAt, clientToSvg, svgScale]);
 
+  // ── Mouse handlers ────────────────────────────────────────────────────────
   function onMouseDown(e: React.MouseEvent<SVGSVGElement>) {
     cancelInertia();
     velocityRef.current = { vx: 0, vy: 0 };
@@ -276,17 +409,64 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     lastMoveRef.current = null;
   }
 
+  // ── Derived data ──────────────────────────────────────────────────────────
+
   const paths = useMemo(() => {
     if (!countries) return [];
     return countries.features.map((f, i) => {
       const id = String(f.id ?? '').padStart(3, '0');
-      return { key: i, id, d: featureToD(f), hasSnow: snowSet.has(id) };
+      return { key: i, id, d: featureToD(f), hasSnow: snowSet.has(id) || discoveredSnowCountries.has(id) };
     });
-  }, [countries, snowSet]);
+  }, [countries, snowSet, discoveredSnowCountries]);
+
+  const statePaths = useMemo(() => {
+    if (!statesData) return [];
+    return statesData.features.map((f: StateFeature, i: number) => ({
+      key: i,
+      d: featureToD(f as Feature<Polygon | MultiPolygon>),
+      stateId: `${f.properties.a}|${f.properties.n}`,
+      adm0: f.properties.a,
+      lat: f.properties.t,
+      lon: f.properties.g,
+    }));
+  }, [statesData]);
+
+  const visibleStatePaths = useMemo(() => {
+    if (statePaths.length === 0 || !focusedCountryId) return [];
+    return statePaths.filter(s => ADM0_TO_NUMERIC[s.adm0] === focusedCountryId);
+  }, [statePaths, focusedCountryId]);
+
+  const stage = focusedCountryId ? 2 : 1;
+
+  const visibleStates = useMemo(() => {
+    if (visibleStatePaths.length > 0)
+      return visibleStatePaths.map(s => ({ id: s.stateId, lat: s.lat, lon: s.lon }));
+    // Countries with no state data in states.json: query the country center as one region
+    if (focusedCountry)
+      return [{ id: `${focusedCountryId}|whole`, lat: focusedCountry.lat, lon: focusedCountry.lon }];
+    return [];
+  }, [visibleStatePaths, focusedCountry, focusedCountryId]);
+
+  const { snowMap: stateSnowMap, loading: stateLoading } = useStateSnow(visibleStates, focusedCountryId);
+
+  // Persist state-level snow findings back to the country-level view
+  useEffect(() => {
+    if (!focusedCountryId || stateSnowMap.size === 0) return;
+    const hasAnySnow = [...stateSnowMap.values()].some(v => v);
+    if (hasAnySnow) {
+      setDiscoveredSnowCountries(prev => {
+        if (prev.has(focusedCountryId)) return prev;
+        const next = new Set(prev);
+        next.add(focusedCountryId);
+        return next;
+      });
+    }
+  }, [stateSnowMap, focusedCountryId]);
 
   const strokeW = (0.5 / transform.k).toFixed(3);
   const { x: tx, y: ty, k } = transform;
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ position: 'absolute', inset: 0, background: '#000' }}>
       <svg
@@ -306,17 +486,68 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
         aria-label="World snow map"
       >
         <g transform={`translate(${tx.toFixed(2)},${ty.toFixed(2)}) scale(${k.toFixed(4)})`}>
+
+          {/* ── Layer 1: Country fills ───────────────────────────────────── */}
           {([-1, 0, 1] as const).map(offset => (
             <g key={offset} transform={`translate(${offset * W},0)`}>
               {paths.map(({ key, d, hasSnow }) => (
-                <path key={`${offset}-${key}`} d={d} fill={hasSnow ? '#4ade80' : '#3f3f46'} stroke="#111" strokeWidth={strokeW} />
+                <path
+                  key={`${offset}-${key}`}
+                  d={d}
+                  fill={hasSnow ? '#4ade80' : '#3f3f46'}
+                  fillOpacity={stage === 1 ? 1 : 0.22}
+                  stroke={stage === 1 ? '#111' : 'none'}
+                  strokeWidth={strokeW}
+                />
               ))}
             </g>
           ))}
+
+          {/* ── Layer 2: State/province fills (stage 2+) ─────────────────── */}
+          {stage > 1 && ([-1, 0, 1] as const).map(offset => (
+            <g key={`st-${offset}`} transform={`translate(${offset * W},0)`}>
+              {visibleStatePaths.map(s => {
+                const numericCode = ADM0_TO_NUMERIC[s.adm0] ?? '';
+                const fallback = snowSet.has(numericCode);
+                const hasSnow = stateSnowMap.has(s.stateId)
+                  ? stateSnowMap.get(s.stateId)!
+                  : fallback;
+                return (
+                  <path
+                    key={s.key}
+                    d={s.d}
+                    fill={hasSnow ? '#4ade80' : '#2a2a2e'}
+                    fillOpacity={0.93}
+                    stroke="rgba(255,255,255,0.45)"
+                    strokeWidth={0.6 / k}
+                  />
+                );
+              })}
+            </g>
+          ))}
+
+          {/* ── Layer 3: Country outlines on top of state fills ───────────── */}
+          {stage > 1 && ([-1, 0, 1] as const).map(offset => (
+            <g key={offset} transform={`translate(${offset * W},0)`}>
+              {paths.map(({ key, d, id }) => {
+                const isFocused = id === focusedCountryId;
+                return (
+                  <path
+                    key={`outline-${offset}-${key}`}
+                    d={d}
+                    fill="none"
+                    stroke={isFocused ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.15)'}
+                    strokeWidth={(isFocused ? 2 : 0.8) / k}
+                  />
+                );
+              })}
+            </g>
+          ))}
+
         </g>
       </svg>
 
-      {/* Zoom controls — grouped as one pill */}
+      {/* Zoom controls */}
       <div style={{
         position: 'absolute', bottom: 16, right: 16,
         display: 'flex', flexDirection: 'column',
@@ -356,7 +587,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
         border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.75rem',
         padding: '0.5rem 0.75rem', display: 'flex', flexDirection: 'column', gap: 6,
       }}>
-        {[{ color: '#3f3f46', label: 'No snow' }, { color: '#4ade80', label: 'Snow' }].map(({ color, label }) => (
+        {[{ color: '#2a2a2e', label: 'No snow' }, { color: '#4ade80', label: 'Snow' }].map(({ color, label }) => (
           <span key={label} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: '#a1a1aa' }}>
             <span style={{ width: 10, height: 10, borderRadius: 2, background: color, flexShrink: 0 }} />
             {label}
@@ -364,7 +595,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
         ))}
       </aside>
 
-      {(!countries || loading) && !mapError && (
+      {(!countries || loading || stateLoading) && !mapError && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(0,0,0,0.55)', pointerEvents: 'none',

@@ -6,3 +6,7 @@ dist
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Python script outputs
+optimized_snow_points.json
+sample_points_snippet.txt

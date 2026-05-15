@@ -111,9 +111,10 @@ const navBtn: React.CSSProperties = {
 interface Props {
   panTo: (lat: number, lon: number, zoom?: number) => void;
   snowSet: Set<string>;
+  onFocusCountry: (c: { id: string; name: string; lat: number; lon: number } | null) => void;
 }
 
-export function SnowmanNav({ panTo, snowSet }: Props) {
+export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
   const [query, setQuery]           = useState('');
   const [showAbout, setShowAbout]   = useState(false);
   const [locating, setLocating]     = useState(false);
@@ -164,7 +165,8 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
     if (!searchFocused && !(searchOpen && !wide)) return [];
     const historyIds = new Set(history);
     const historyItems = history.map(id => COUNTRIES.find(c => c.id === id)).filter((c): c is Country => !!c);
-    const snowItems = COUNTRIES.filter(c => snowSet.has(c.id) && !historyIds.has(c.id));
+    const snowItems = COUNTRIES.filter(c => snowSet.has(c.id) && !historyIds.has(c.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
     const sections: { label?: string; items: Country[] }[] = [];
     if (historyItems.length) sections.push({ label: 'Recent', items: historyItems });
     if (snowItems.length) sections.push({ label: 'Snow Available', items: snowItems });
@@ -180,6 +182,7 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
     setQuery('');
     setSearchOpen(false);
     setLocating(true);
+    onFocusCountry(null);
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => { panTo(coords.latitude, coords.longitude, 6); setLocating(false); },
       () => setLocating(false),
@@ -189,9 +192,11 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
   function selectCountry(c: Country) {
     panTo(c.lat, c.lon, 5);
     saveToHistory(c.id);
+    onFocusCountry({ id: c.id, name: c.name, lat: c.lat, lon: c.lon });
     setQuery('');
     setSearchOpen(false);
     setActiveIndex(-1);
+    inputRef.current?.blur();
   }
 
   const searchInput = (autoFocus = false, fullWidth = false) => (
