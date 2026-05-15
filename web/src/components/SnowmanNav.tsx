@@ -362,6 +362,7 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
             transform: 'translateX(-50%)',
             width: 'min(92vw, 340px)', zIndex: 199,
             padding: '1.1rem 1.25rem',
+            maxHeight: 'calc(100dvh - 80px)', overflowY: 'auto',
           }}>
             <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.1rem', fontWeight: 800, color: '#f5f5f5', margin: '0 0 0.5rem' }}>
               Snowman
