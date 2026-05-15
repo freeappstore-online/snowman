@@ -318,7 +318,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
 
       {/* Zoom controls — grouped as one pill */}
       <div style={{
-        position: 'absolute', bottom: 80, right: 16,
+        position: 'absolute', bottom: 16, right: 16,
         display: 'flex', flexDirection: 'column',
         background: 'rgba(15,15,15,0.88)',
         border: '1px solid rgba(255,255,255,0.12)', borderRadius: '0.5rem',

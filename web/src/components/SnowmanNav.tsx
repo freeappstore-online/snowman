@@ -157,7 +157,7 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
     const historyItems = history.map(id => COUNTRIES.find(c => c.id === id)).filter((c): c is Country => !!c);
     const snowItems = COUNTRIES.filter(c => snowSet.has(c.id) && !historyIds.has(c.id)).slice(0, 6);
     const sections: { label?: string; items: Country[] }[] = [];
-    if (historyItems.length) sections.push({ label: 'History', items: historyItems });
+    if (historyItems.length) sections.push({ label: 'Recent', items: historyItems });
     if (snowItems.length) sections.push({ label: 'Snow Available', items: snowItems });
     return sections;
   }, [query, searchFocused, searchOpen, wide, history, snowSet]);
@@ -257,7 +257,7 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
     let idx = offset;
     return dropdownSections.map((section, si) => (
       <div key={si}>
-        {section.label && sectionLabel(section.label, section.label === 'History')}
+        {section.label && sectionLabel(section.label, section.label === 'Recent')}
         {section.items.map(c => dropdownItem(c, idx++))}
       </div>
     ));

@@ -17,15 +17,15 @@ export default function App() {
         snowSet={snowSet}
       />
 
-      {/* Attribution — bottom right */}
+      {/* Attribution — bottom center */}
       <div style={{
-        position: 'absolute', bottom: 16, right: 16, zIndex: 100,
-        fontSize: '0.65rem', color: '#6b7280', textAlign: 'right', lineHeight: 1.4,
+        position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 100,
+        fontSize: '0.65rem', color: '#6b7280', textAlign: 'center', whiteSpace: 'nowrap',
       }}>
         {error
           ? <span style={{ color: '#ef4444' }}>Snow data unavailable</span>
           : lastUpdated
-            ? <>Snow depth: <a href="https://open-meteo.com" style={{ color: '#6b7280' }}>Open-Meteo</a><br />Updated {lastUpdated.toLocaleTimeString()}</>
+            ? <>Updated {lastUpdated.toLocaleTimeString()}</>
             : loading ? 'Fetching snow data…' : null
         }
       </div>
