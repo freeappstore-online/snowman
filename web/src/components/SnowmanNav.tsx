@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 
 const COUNTRIES = [
+  { id: '010', name: 'Antarctica',      lat:-82.86,  lon: 135.00 },
+  { id: '304', name: 'Greenland',       lat: 72.00,  lon: -40.00 },
   { id: '004', name: 'Afghanistan',     lat: 33.93,  lon:  67.71 },
   { id: '008', name: 'Albania',         lat: 41.15,  lon:  20.17 },
   { id: '012', name: 'Algeria',         lat: 28.03,  lon:   1.66 },
@@ -22,6 +24,7 @@ const COUNTRIES = [
   { id: '152', name: 'Chile',           lat:-35.68,  lon: -71.54 },
   { id: '156', name: 'China',           lat: 35.86,  lon: 104.20 },
   { id: '170', name: 'Colombia',        lat:  4.57,  lon: -74.30 },
+  { id: '180', name: 'DR Congo',        lat: -4.04,  lon:  21.76 },
   { id: '191', name: 'Croatia',         lat: 45.10,  lon:  15.20 },
   { id: '192', name: 'Cuba',            lat: 21.52,  lon: -77.78 },
   { id: '203', name: 'Czechia',         lat: 49.82,  lon:  15.47 },
@@ -31,6 +34,7 @@ const COUNTRIES = [
   { id: '231', name: 'Ethiopia',        lat:  9.15,  lon:  40.49 },
   { id: '246', name: 'Finland',         lat: 61.92,  lon:  25.75 },
   { id: '250', name: 'France',          lat: 46.23,  lon:   2.21 },
+  { id: '268', name: 'Georgia',         lat: 42.32,  lon:  43.36 },
   { id: '276', name: 'Germany',         lat: 51.17,  lon:  10.45 },
   { id: '288', name: 'Ghana',           lat:  7.95,  lon:  -1.02 },
   { id: '300', name: 'Greece',          lat: 39.07,  lon:  21.82 },
@@ -38,6 +42,7 @@ const COUNTRIES = [
   { id: '332', name: 'Haiti',           lat: 18.97,  lon: -72.29 },
   { id: '340', name: 'Honduras',        lat: 15.20,  lon: -86.24 },
   { id: '348', name: 'Hungary',         lat: 47.16,  lon:  19.50 },
+  { id: '352', name: 'Iceland',         lat: 64.96,  lon: -19.02 },
   { id: '356', name: 'India',           lat: 20.59,  lon:  78.96 },
   { id: '360', name: 'Indonesia',       lat: -0.79,  lon: 113.92 },
   { id: '364', name: 'Iran',            lat: 32.43,  lon:  53.69 },
@@ -48,6 +53,7 @@ const COUNTRIES = [
   { id: '392', name: 'Japan',           lat: 36.20,  lon: 138.25 },
   { id: '398', name: 'Kazakhstan',      lat: 48.02,  lon:  66.92 },
   { id: '404', name: 'Kenya',           lat: -0.02,  lon:  37.91 },
+  { id: '417', name: 'Kyrgyzstan',      lat: 41.20,  lon:  74.76 },
   { id: '408', name: 'North Korea',     lat: 40.34,  lon: 127.51 },
   { id: '410', name: 'South Korea',     lat: 35.91,  lon: 127.77 },
   { id: '418', name: 'Laos',            lat: 19.86,  lon: 102.50 },
@@ -71,12 +77,15 @@ const COUNTRIES = [
   { id: '682', name: 'Saudi Arabia',    lat: 23.89,  lon:  45.08 },
   { id: '710', name: 'South Africa',    lat:-30.56,  lon:  22.94 },
   { id: '724', name: 'Spain',           lat: 40.46,  lon:  -3.75 },
+  { id: '762', name: 'Tajikistan',       lat: 38.86,  lon:  71.28 },
+  { id: '834', name: 'Tanzania',        lat: -6.37,  lon:  34.89 },
   { id: '752', name: 'Sweden',          lat: 60.13,  lon:  18.64 },
   { id: '756', name: 'Switzerland',     lat: 46.82,  lon:   8.23 },
   { id: '760', name: 'Syria',           lat: 34.80,  lon:  38.99 },
   { id: '764', name: 'Thailand',        lat: 15.87,  lon: 100.99 },
   { id: '792', name: 'Turkey',          lat: 38.96,  lon:  35.24 },
   { id: '804', name: 'Ukraine',         lat: 48.38,  lon:  31.17 },
+  { id: '800', name: 'Uganda',          lat:  1.37,  lon:  32.29 },
   { id: '784', name: 'UAE',             lat: 23.42,  lon:  53.85 },
   { id: '826', name: 'United Kingdom',  lat: 55.38,  lon:  -3.44 },
   { id: '840', name: 'United States',   lat: 37.09,  lon: -95.71 },
@@ -149,13 +158,13 @@ export function SnowmanNav({ panTo, snowSet }: Props) {
   // Sections for dropdown: [{label?, items}]
   const dropdownSections = useMemo(() => {
     if (query.trim()) {
-      const results = COUNTRIES.filter(c => c.name.toLowerCase().startsWith(query.toLowerCase())).slice(0, 6);
+      const results = COUNTRIES.filter(c => c.name.toLowerCase().startsWith(query.toLowerCase()));
       return results.length ? [{ items: results }] : [];
     }
     if (!searchFocused && !(searchOpen && !wide)) return [];
     const historyIds = new Set(history);
     const historyItems = history.map(id => COUNTRIES.find(c => c.id === id)).filter((c): c is Country => !!c);
-    const snowItems = COUNTRIES.filter(c => snowSet.has(c.id) && !historyIds.has(c.id)).slice(0, 6);
+    const snowItems = COUNTRIES.filter(c => snowSet.has(c.id) && !historyIds.has(c.id));
     const sections: { label?: string; items: Country[] }[] = [];
     if (historyItems.length) sections.push({ label: 'Recent', items: historyItems });
     if (snowItems.length) sections.push({ label: 'Snow Available', items: snowItems });
