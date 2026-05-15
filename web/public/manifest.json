@@ -1,6 +1,6 @@
 {
-  "name": "freeappstore",
-  "short_name": "freeappstore",
+  "name": "Snowman — FreeAppStore",
+  "short_name": "Snowman",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
