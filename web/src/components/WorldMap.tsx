@@ -597,7 +597,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
             <button
               onClick={() => {
                 const [sx, sy] = clientToSvg(window.innerWidth / 2, window.innerHeight / 2);
-                smoothZoomAt(sx, sy, f);
+                zoomAt(sx, sy, f);
               }}
               disabled={atLimit}
               style={{
