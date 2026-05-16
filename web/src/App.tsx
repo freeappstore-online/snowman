@@ -49,7 +49,7 @@ export default function App() {
 
   return (
     <Shell>
-      <WorldMap ref={mapRef} snowSet={snowSet} loading={loading} focusedCountry={focusedCountry} onCountryClick={handleCountryClick} />
+      <WorldMap ref={mapRef} snowSet={snowSet} loading={loading} focusedCountry={focusedCountry} onCountryClick={handleCountryClick} onOceanClick={() => setFocusedCountry(null)} />
 
       <SnowmanNav
         panTo={(lat, lon, zoom) => mapRef.current?.panTo(lat, lon, zoom)}

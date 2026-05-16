@@ -123,13 +123,14 @@ interface Props {
   loading: boolean;
   focusedCountry: FocusedCountry | null;
   onCountryClick?: (id: string) => void;
+  onOceanClick?: () => void;
 }
 
 export interface WorldMapHandle {
   panTo: (lat: number, lon: number, zoom?: number) => void;
 }
 
-export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, loading, focusedCountry, onCountryClick }, ref) {
+export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, loading, focusedCountry, onCountryClick, onOceanClick }, ref) {
   const focusedCountryId = focusedCountry?.id ?? null;
   const [countries,  setCountries]  = useState<FeatureCollection<Polygon | MultiPolygon> | null>(null);
   const [discoveredSnowCountries, setDiscoveredSnowCountries] = useState<Set<string>>(new Set());
@@ -378,18 +379,29 @@ const didDragRef      = useRef(false);
     lastMoveRef.current = { x: e.clientX, y: e.clientY, t: now };
   }
 
-  function onMouseUp() {
+  function onMouseUp(e: React.MouseEvent<SVGSVGElement>) {
+    const isOcean = !didDragRef.current && (e.target as SVGElement).tagName !== 'path';
+    if (dragStart.current) startInertia();
+    dragStart.current = null;
+    lastMoveRef.current = null;
+    setDragging(false);
+    if (isOcean) onOceanClick?.();
+  }
+
+  function onMouseLeave() {
     if (dragStart.current) startInertia();
     dragStart.current = null;
     lastMoveRef.current = null;
     setDragging(false);
   }
 
-  function onTouchEnd() {
+  function onTouchEnd(e: React.TouchEvent<SVGSVGElement>) {
+    const isOcean = !didDragRef.current && (e.target as SVGElement).tagName !== 'path';
     if (dragStart.current) startInertia();
     dragStart.current = null;
     pinchRef.current = null;
     lastMoveRef.current = null;
+    if (isOcean) onOceanClick?.();
   }
 
   // ── Derived data ──────────────────────────────────────────────────────────
@@ -467,7 +479,7 @@ const didDragRef      = useRef(false);
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
+        onMouseLeave={onMouseLeave}
         onTouchEnd={onTouchEnd}
         aria-label="World snow map"
       >
