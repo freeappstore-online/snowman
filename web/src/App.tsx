@@ -26,6 +26,13 @@ export default function App() {
   const mapRef = useRef<WorldMapHandle>(null);
   const [now, setNow] = useState(() => Date.now());
   const [focusedCountry, setFocusedCountry] = useState<{ id: string; name: string; lat: number; lon: number } | null>(null);
+  const [wide, setWide] = useState(() => window.innerWidth >= 560);
+
+  useEffect(() => {
+    const update = () => setWide(window.innerWidth >= 560);
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000);
@@ -34,7 +41,7 @@ export default function App() {
 
   return (
     <Shell>
-      <WorldMap ref={mapRef} snowSet={snowSet} loading={loading} focusedCountry={focusedCountry} onClearFocus={() => setFocusedCountry(null)} />
+      <WorldMap ref={mapRef} snowSet={snowSet} loading={loading} focusedCountry={focusedCountry} />
 
       <SnowmanNav
         panTo={(lat, lon, zoom) => mapRef.current?.panTo(lat, lon, zoom)}
@@ -42,10 +49,14 @@ export default function App() {
         onFocusCountry={c => setFocusedCountry(c)}
       />
 
-      {/* Focused country island — bottom center */}
+      {/* Focused country island — bottom center (desktop) / below nav (mobile) */}
       {focusedCountry && (
         <div style={{
-          position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 200,
+          position: 'absolute',
+          ...(wide
+            ? { bottom: 16, top: 'auto' }
+            : { top: 64, bottom: 'auto' }),
+          left: '50%', transform: 'translateX(-50%)', zIndex: 200,
           background: 'rgba(10,10,10,0.88)', border: '1px solid rgba(255,255,255,0.10)',
           borderRadius: '1.25rem', padding: '0.35rem 0.5rem 0.35rem 1rem',
           display: 'flex', alignItems: 'center', gap: '0.75rem',
@@ -77,6 +88,7 @@ export default function App() {
               ? <>Updated {relativeTime(lastUpdated, now)}</>
               : loading ? 'Fetching snow data…' : null
           }
+          {!error && <div style={{ marginTop: 2 }}>World map can make mistakes, check country's snow via searching</div>}
         </div>
       )}
     </Shell>

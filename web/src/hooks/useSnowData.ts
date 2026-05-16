@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 
 // [countryCode, lat, lon] — ERA5-optimized best snow point per country (find_best_snow_points.py).
 // Countries not found by ERA5 use manually selected high-elevation fallback points.
-const SAMPLE_POINTS: [string, number, number][] = [
+export const SAMPLE_POINTS: [string, number, number][] = [
   ['004',  36.38,  71.46], // Afghanistan
   ['008',  40.63,  20.26], // Albania
   ['010', -90.00,   0.00], // Antarctica

@@ -45,8 +45,6 @@ function persistEntries(newEntries: Array<[string, boolean]>): void {
 
 loadStoredCache();
 
-const CLUSTER_DEG = 1.5;
-
 export function useStateSnow(visibleStates: StateMeta[], focusedCountryId: string | null) {
   const [snowMap, setSnowMap] = useState<Map<string, boolean>>(new Map());
   const [loading, setLoading] = useState(false);
@@ -60,41 +58,18 @@ export function useStateSnow(visibleStates: StateMeta[], focusedCountryId: strin
   useEffect(() => {
     if (visibleStates.length === 0) return;
 
-    // Cluster visible states into CLUSTER_DEG° grid cells
-    const clusters = new Map<string, StateMeta[]>();
-    for (const s of visibleStates) {
-      const key = `${Math.round(s.lon / CLUSTER_DEG)},${Math.round(s.lat / CLUSTER_DEG)}`;
-      if (!clusters.has(key)) clusters.set(key, []);
-      clusters.get(key)!.push(s);
-    }
-
     const toFetch: StateMeta[] = [];
-    const repToGroup = new Map<string, string[]>();
     const merged = new Map<string, boolean>();
 
-    for (const group of clusters.values()) {
-      const rep = group.reduce((best, s) =>
-        Math.abs(s.lat) > Math.abs(best.lat) ? s : best
-      );
-      repToGroup.set(rep.id, group.map(s => s.id));
-
-      let allCached = true;
-      for (const s of group) {
-        if (resultCache.has(s.id)) {
-          merged.set(s.id, resultCache.get(s.id)!);
-        } else {
-          allCached = false;
-        }
-      }
-
-      if (!allCached && !resultCache.has(rep.id)) {
-        toFetch.push(rep);
+    for (const s of visibleStates) {
+      if (resultCache.has(s.id)) {
+        merged.set(s.id, resultCache.get(s.id)!);
+      } else {
+        toFetch.push(s);
       }
     }
 
-    const batch = toFetch.slice(0, 30);
-
-    if (batch.length === 0) {
+    if (toFetch.length === 0) {
       setSnowMap(merged);
       return;
     }
@@ -103,31 +78,56 @@ export function useStateSnow(visibleStates: StateMeta[], focusedCountryId: strin
     setSnowMap(new Map(merged));
 
     const ctrl = new AbortController();
-    const lats = batch.map(s => s.lat.toFixed(4)).join(',');
-    const lons = batch.map(s => s.lon.toFixed(4)).join(',');
 
-    fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=snow_depth&forecast_days=1&timezone=auto`,
-      { signal: ctrl.signal }
-    )
-      .then(r => { if (!r.ok) throw new Error(`${r.status}`); return r.json(); })
-      .then((data: unknown) => {
-        const results = Array.isArray(data) ? data : [data];
+    const chunkSize = 100; // open-meteo supports up to 100 locations per request
+    const chunks: StateMeta[][] = [];
+    for (let i = 0; i < toFetch.length; i += chunkSize) {
+      chunks.push(toFetch.slice(i, i + chunkSize));
+    }
+
+    (async () => {
+      const resultsArray: Array<{ batch: StateMeta[]; data: unknown }> = [];
+      try {
+        for (const batch of chunks) {
+          if (ctrl.signal.aborted) return;
+
+          const lats = batch.map(s => s.lat.toFixed(4)).join(',');
+          const lons = batch.map(s => s.lon.toFixed(4)).join(',');
+
+          const r = await fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=snow_depth&forecast_days=1&timezone=auto`,
+            { signal: ctrl.signal }
+          );
+
+          if (!r.ok) throw new Error(`${r.status}`);
+          const data = await r.json();
+          resultsArray.push({ batch, data });
+
+          // 250 ms delay between chunks to prevent Open-Meteo 429 errors
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+
+        if (ctrl.signal.aborted) return;
+
         const updated = new Map<string, boolean>(merged);
         const newEntries: Array<[string, boolean]> = [];
-        batch.forEach((rep, i) => {
-          const hasSnow = ((results[i] as { current?: { snow_depth?: number } })?.current?.snow_depth ?? 0) > 0;
-          for (const id of repToGroup.get(rep.id) ?? []) {
-            resultCache.set(id, hasSnow);
-            updated.set(id, hasSnow);
-            newEntries.push([id, hasSnow]);
-          }
+        resultsArray.forEach(({ batch, data }) => {
+          const results = Array.isArray(data) ? data : [data];
+          batch.forEach((s, i) => {
+            const hasSnow = ((results[i] as { current?: { snow_depth?: number } })?.current?.snow_depth ?? 0) > 0;
+            resultCache.set(s.id, hasSnow);
+            updated.set(s.id, hasSnow);
+            newEntries.push([s.id, hasSnow]);
+          });
         });
         persistEntries(newEntries);
         setSnowMap(updated);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      } catch {
+        // Silently ignore aborts and errors
+      } finally {
+        if (!ctrl.signal.aborted) setLoading(false);
+      }
+    })();
 
     return () => { ctrl.abort(); setLoading(false); };
   }, [visibleStates]);

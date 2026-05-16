@@ -3,6 +3,11 @@ import * as topojson from 'topojson-client';
 import type { Topology, GeometryCollection } from 'topojson-specification';
 import type { FeatureCollection, Feature, Polygon, MultiPolygon } from 'geojson';
 import { useStateSnow } from '../hooks/useStateSnow';
+import { SAMPLE_POINTS } from '../hooks/useSnowData';
+
+const SNOW_SAMPLE: Record<string, { lat: number; lon: number }> = Object.fromEntries(
+  SAMPLE_POINTS.map(([id, lat, lon]) => [id, { lat, lon }])
+);
 
 const WORLD_URL  = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json';
 const STATES_URL = '/states.json';
@@ -33,6 +38,28 @@ const ADM0_TO_NUMERIC: Record<string, string> = {
   TUR: '792', UKR: '804', UGA: '800', ARE: '784', GBR: '826',
   USA: '840', URY: '858', UZB: '860', VEN: '862', VNM: '704',
   ATA: '010', GRL: '304', SDN: '729', SSD: '728',
+  // Additional countries
+  ARM: '051', AZE: '031', BHR: '048', BLR: '112', BEN: '204',
+  BWA: '072', BIH: '070', BRN: '096', BFA: '854', BDI: '108',
+  CPV: '132', CAF: '140', TCD: '148', COM: '174', COG: '178',
+  CRI: '188', CIV: '384', CYP: '196', DJI: '262', DOM: '214',
+  SLV: '222', GNQ: '226', ERI: '232', EST: '233', SWZ: '748',
+  FJI: '242', GAB: '266', GMB: '270', GIN: '324', GNB: '624',
+  GUY: '328', JAM: '388', JOR: '400', KWT: '414', LVA: '428',
+  LBN: '422', LSO: '426', LBR: '430', LUX: '442', MDG: '450',
+  MWI: '454', MDV: '462', MLI: '466', MLT: '470', MRT: '478',
+  MUS: '480', MDA: '498', MNE: '499', MOZ: '508', NAM: '516',
+  NIC: '558', NER: '562', MKD: '807', OMN: '512', PAN: '591',
+  PNG: '598', PRY: '600', QAT: '634', RWA: '646', STP: '678',
+  SEN: '686', SRB: '688', SLE: '694', SVK: '703', SVN: '705',
+  SLB: '090', SOM: '706', SUR: '740', TLS: '626', TGO: '768',
+  TTO: '780', TUN: '788', VUT: '548', YEM: '887', ZMB: '894',
+  ZWE: '716', TKM: '795', ESH: '732', PSE: '275', XKX: '383',
+  TWN: '158', AND: '020', BLZ: '084', LIE: '438', MCO: '492',
+  SMR: '674', ATG: '028', BHS: '044', BRB: '052', DMA: '212',
+  GRD: '308', KNA: '659', LCA: '662', VCT: '670', KIR: '296',
+  MHL: '584', FSM: '583', NRU: '520', PLW: '585', WSM: '882',
+  TON: '776', TUV: '798', VAT: '336',
 };
 
 // ─── Projection helpers ────────────────────────────────────────────────────
@@ -75,45 +102,6 @@ function featureToD(f: Feature<Polygon | MultiPolygon>): string {
   return g.coordinates.flatMap(p => p.map(r => ringToD(r))).join('');
 }
 
-// Returns lat/lon bounds of the visible viewport with an optional margin factor
-function getViewportBounds(tx: number, ty: number, k: number, margin = 1.6) {
-  const cW = window.innerWidth;
-  const cH = window.innerHeight;
-  let svgW: number, svgH: number, svgXOff: number, svgYOff: number;
-  if (cW >= cH) {
-    svgW = W; svgH = W * cH / cW;
-    svgXOff = 0; svgYOff = (W - svgH) / 2;
-  } else {
-    svgH = W; svgW = W * cW / cH;
-    svgXOff = (W - svgW) / 2; svgYOff = 0;
-  }
-  const cx = svgXOff + svgW / 2;
-  const cy = svgYOff + svgH / 2;
-  const hw = (svgW / 2) * margin;
-  const hh = (svgH / 2) * margin;
-
-  const groupLeft   = (cx - hw - tx) / k;
-  const groupRight  = (cx + hw - tx) / k;
-  const groupTop    = (cy - hh - ty) / k;
-  const groupBottom = (cy + hh - ty) / k;
-
-  const normLeft = ((groupLeft % W) + W) % W;
-  const lonMin   = (normLeft / W) * 360 - 180;
-  const lonMax   = lonMin + (groupRight - groupLeft) / W * 360;
-
-  const unLat = (gy: number) => {
-    const yn = Math.max(0.001, Math.min(0.999, gy / W));
-    return Math.atan(Math.sinh(Math.PI * (1 - 2 * yn))) * 180 / Math.PI;
-  };
-
-  return {
-    lonMin: Math.max(-180, lonMin),
-    lonMax: Math.min(180, lonMax),
-    latMin: unLat(Math.min(0.999 * W, groupBottom)),
-    latMax: unLat(Math.max(0.001, groupTop)),
-  };
-}
-
 // ─── Types ────────────────────────────────────────────────────────────────
 interface XYK { x: number; y: number; k: number }
 
@@ -134,14 +122,13 @@ interface Props {
   snowSet: Set<string>;
   loading: boolean;
   focusedCountry: FocusedCountry | null;
-  onClearFocus: () => void;
 }
 
 export interface WorldMapHandle {
   panTo: (lat: number, lon: number, zoom?: number) => void;
 }
 
-export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, loading, focusedCountry, onClearFocus }, ref) {
+export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, loading, focusedCountry }, ref) {
   const focusedCountryId = focusedCountry?.id ?? null;
   const [countries,  setCountries]  = useState<FeatureCollection<Polygon | MultiPolygon> | null>(null);
   const [discoveredSnowCountries, setDiscoveredSnowCountries] = useState<Set<string>>(new Set());
@@ -149,10 +136,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
   const [mapError,   setMapError]   = useState(false);
   const [transform,  setTransform]  = useState<XYK>({ x: 0, y: 0, k: 1 });
   const [dragging,   setDragging]   = useState(false);
-  const [viewportBounds, setViewportBounds] = useState<ReturnType<typeof getViewportBounds> | null>(null);
-
-  const onClearFocusRef = useRef(onClearFocus);
-  useEffect(() => { onClearFocusRef.current = onClearFocus; }, [onClearFocus]);
+  const [wide,       setWide]       = useState(() => window.innerWidth >= 560);
 
   const transformRef = useRef<XYK>({ x: 0, y: 0, k: 1 });
   const clipRef      = useRef(computeClip(window.innerWidth, window.innerHeight));
@@ -166,7 +150,10 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
 
   // ── Resize ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    const update = () => { clipRef.current = computeClip(window.innerWidth, window.innerHeight); };
+    const update = () => {
+      clipRef.current = computeClip(window.innerWidth, window.innerHeight);
+      setWide(window.innerWidth >= 560);
+    };
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
   }, []);
@@ -201,35 +188,6 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
       })
       .catch(err => console.error('[states] failed to load:', err));
   }, [transform.k]);
-
-  // ── Debounce viewport bounds for state visibility ─────────────────────────
-  useEffect(() => {
-    const { k, x, y } = transform;
-    if (k < MIN_FETCH_K) { setViewportBounds(null); return; }
-    if (dragging) return;
-    const timer = setTimeout(() => setViewportBounds(getViewportBounds(x, y, k)), 500);
-    return () => clearTimeout(timer);
-  }, [transform, dragging]);
-
-  // ── Clear focus when focused country pans off screen ─────────────────────
-  const focusTimeRef = useRef(0);
-
-  useEffect(() => {
-    if (focusedCountry) focusTimeRef.current = Date.now();
-  }, [focusedCountryId]);
-
-  useEffect(() => {
-    if (!focusedCountry || !viewportBounds) return;
-    if (Date.now() - focusTimeRef.current < 1000) return;
-    const { lat, lon } = focusedCountry;
-    const { lonMin, lonMax, latMin, latMax } = viewportBounds;
-    const pad = 40;
-    const inLat = lat >= latMin - pad && lat <= latMax + pad;
-    const inLon = lonMax <= 180
-      ? lon >= lonMin - pad && lon <= lonMax + pad
-      : (lon >= lonMin - pad && lon <= 180) || (lon >= -180 && lon <= lonMax - 360 + pad);
-    if (!inLat || !inLon) onClearFocusRef.current();
-  }, [viewportBounds, focusedCountry]);
 
   // ── Pan/zoom helpers ─────────────────────────────────────────────────────
   const applyTransform = useCallback((t: XYK) => {
@@ -421,7 +379,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
 
   const statePaths = useMemo(() => {
     if (!statesData) return [];
-    return statesData.features.map((f: StateFeature, i: number) => ({
+    return statesData.features.filter(f => f.geometry != null).map((f: StateFeature, i: number) => ({
       key: i,
       d: featureToD(f as Feature<Polygon | MultiPolygon>),
       stateId: `${f.properties.a}|${f.properties.n}`,
@@ -439,12 +397,16 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
   const stage = focusedCountryId ? 2 : 1;
 
   const visibleStates = useMemo(() => {
-    if (visibleStatePaths.length > 0)
-      return visibleStatePaths.map(s => ({ id: s.stateId, lat: s.lat, lon: s.lon }));
-    // Countries with no state data in states.json: query the country center as one region
-    if (focusedCountry)
-      return [{ id: `${focusedCountryId}|whole`, lat: focusedCountry.lat, lon: focusedCountry.lon }];
-    return [];
+    const states = visibleStatePaths.map(s => ({ id: s.stateId, lat: s.lat, lon: s.lon }));
+    // Always append the ERA5 snow-optimized point so countries with missing/sparse
+    // state data (e.g. Switzerland only has Schaffhausen) still query the snowy area.
+    if (focusedCountryId) {
+      const sample = SNOW_SAMPLE[focusedCountryId];
+      if (sample) states.push({ id: `${focusedCountryId}|sample`, lat: sample.lat, lon: sample.lon });
+      else if (states.length === 0)
+        states.push({ id: `${focusedCountryId}|whole`, lat: focusedCountry?.lat ?? 0, lon: focusedCountry?.lon ?? 0 });
+    }
+    return states;
   }, [visibleStatePaths, focusedCountry, focusedCountryId]);
 
   const { snowMap: stateSnowMap, loading: stateLoading } = useStateSnow(visibleStates, focusedCountryId);
@@ -508,10 +470,21 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
             <g key={`st-${offset}`} transform={`translate(${offset * W},0)`}>
               {visibleStatePaths.map(s => {
                 const numericCode = ADM0_TO_NUMERIC[s.adm0] ?? '';
-                const fallback = snowSet.has(numericCode);
-                const hasSnow = stateSnowMap.has(s.stateId)
-                  ? stateSnowMap.get(s.stateId)!
-                  : fallback;
+                const sampleSnow = stateSnowMap.get(`${numericCode}|sample`);
+
+                let hasSnow = stateSnowMap.get(s.stateId);
+
+                if (hasSnow === false && sampleSnow) {
+                  const sp = SNOW_SAMPLE[numericCode];
+                  if (sp && Math.hypot(s.lon - sp.lon, s.lat - sp.lat) < 2.5) {
+                    hasSnow = true;
+                  }
+                }
+
+                if (hasSnow === undefined) {
+                  hasSnow = sampleSnow ?? false;
+                }
+
                 return (
                   <path
                     key={s.key}
@@ -549,7 +522,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
 
       {/* Zoom controls */}
       <div style={{
-        position: 'absolute', bottom: 16, right: 16,
+        position: 'absolute', bottom: wide ? 16 : 48, right: 16,
         display: 'flex', flexDirection: 'column',
         background: 'rgba(15,15,15,0.88)',
         border: '1px solid rgba(255,255,255,0.12)', borderRadius: '0.5rem',
@@ -582,7 +555,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
 
       {/* Legend */}
       <aside style={{
-        position: 'absolute', bottom: 16, left: 16,
+        position: 'absolute', bottom: wide ? 16 : 48, left: 16,
         background: 'rgba(15,15,15,0.88)',
         border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.75rem',
         padding: '0.5rem 0.75rem', display: 'flex', flexDirection: 'column', gap: 6,
