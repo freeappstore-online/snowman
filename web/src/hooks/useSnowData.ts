@@ -8,7 +8,8 @@ export const SAMPLE_POINTS: [string, number, number][] = [
   ['008',  40.63,  20.26], // Albania
   ['010', -90.00,   0.00], // Antarctica
   ['012',  36.37,   6.61], // Algeria — Constantine highlands (manual)
-  ['032', -50.06, -72.56], // Argentina
+  ['032', -41.14, -71.31], // Argentina — Bariloche (seasonal Andean snow, replaces glacial Patagonia point)
+  ['032', -32.89, -68.83], // Argentina — Mendoza Andes (northern Andes, closer to Chile/Bolivia)
   ['036', -41.75, 145.95], // Australia
   ['040',  47.36,  10.54], // Austria
   ['056',  50.49,   5.56], // Belgium
@@ -20,7 +21,8 @@ export const SAMPLE_POINTS: [string, number, number][] = [
   ['104',  27.33,  97.41], // Myanmar — Putao far north (manual)
   ['120',   5.95,  10.16], // Cameroon — Bamenda highlands (manual)
   ['124',  60.68,-140.04], // Canada
-  ['152', -54.93, -70.43], // Chile
+  ['152', -54.93, -70.43], // Chile — Tierra del Fuego (southern)
+  ['152', -38.39, -71.62], // Chile — Villarrica/Lake District (central Andes seasonal)
   ['156',  31.16,  92.63], // China
   ['170',   6.79, -72.63], // Colombia
   ['180',   0.14,  29.29], // DR Congo — Rwenzori (manual)
@@ -64,7 +66,8 @@ export const SAMPLE_POINTS: [string, number, number][] = [
   ['616',  50.00,  21.15], // Poland
   ['620',  41.51,  -6.29], // Portugal
   ['642',  46.66,  25.27], // Romania
-  ['643',  76.19,  63.00], // Russia
+  ['643',  76.19,  63.00], // Russia — Ural/western
+  ['643',  43.12, 131.89], // Russia — Vladivostok (Pacific neighbors)
   ['682',  28.38,  36.57], // Saudi Arabia — Tabuk (manual)
   ['704',  22.34, 103.84], // Vietnam — Sa Pa (manual)
   ['710', -33.96,  19.46], // South Africa
@@ -78,7 +81,7 @@ export const SAMPLE_POINTS: [string, number, number][] = [
   ['804',  48.22,  25.14], // Ukraine
   ['826',  56.94,  -3.61], // United Kingdom
   ['834',  -3.35,  37.33], // Tanzania — Kilimanjaro (manual)
-  ['840',  61.93,-144.14], // United States
+  ['840',  64.84,-147.72], // United States — Fairbanks AK (seasonal winter snow)
   ['858', -33.98, -55.44], // Uruguay
   ['860',  42.20,  70.99], // Uzbekistan
   ['862',   8.60, -71.16], // Venezuela — Mérida Andes (manual)

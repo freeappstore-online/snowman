@@ -196,3 +196,21 @@ export const COUNTRIES = [
 export type Country = typeof COUNTRIES[number];
 
 export const COUNTRY_BY_ID = new Map(COUNTRIES.map(c => [c.id, c]));
+
+// Extra geographic spread points for large countries whose centroid is far from some neighbors.
+// Used only for distance sorting in Snow Near Me — not for snow queries.
+export const COUNTRY_EXTENT_POINTS = new Map<string, [number, number][]>([
+  ['643', [[55.75,  37.62], [43.12, 131.89], [53.01, 158.65]]], // Russia: Moscow, Vladivostok, Kamchatka
+  ['124', [[44.65, -63.57], [49.25,-123.10], [58.80, -94.17]]], // Canada: Halifax, Vancouver, Hudson Bay
+  ['840', [[40.71, -74.01], [34.05,-118.24]                  ]], // USA: New York, Los Angeles
+  ['156', [[39.90, 116.40], [43.83,  87.62], [47.00, 130.00], [25.04, 108.37]]], // China: Beijing, Xinjiang, Northeast, Nanning (S near Vietnam/Laos)
+  ['036', [[-31.95,115.86], [-12.46, 130.84]                 ]], // Australia: Perth, Darwin
+  ['032', [[-34.61, -58.38], [-32.89, -68.83], [-24.79, -65.41]]], // Argentina: Buenos Aires (E), Mendoza (W near Chile), Salta (N near Bolivia/Paraguay)
+  ['152', [[-18.48, -70.33], [-33.45, -70.67]                ]], // Chile: Arica (N near Peru/Bolivia), Santiago area (central)
+  ['578', [[59.91,  10.75], [58.07,   8.01]                  ]], // Norway: Oslo + Kristiansand (S — for Denmark/Sweden proximity)
+  ['752', [[55.60,  13.00]                                   ]], // Sweden: Malmö (S — for Denmark proximity across Øresund)
+  ['792', [[41.01,  28.98]                                   ]], // Turkey: Istanbul (W — for Greece/Bulgaria proximity)
+  ['398', [[43.67,  51.16]                                   ]], // Kazakhstan: Caspian west
+  ['356', [[22.57,  88.36], [19.08,  72.88]                  ]], // India: Kolkata, Mumbai
+  ['076', [[-3.10,  -60.03]                                  ]], // Brazil: Manaus north
+]);

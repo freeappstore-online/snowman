@@ -52,3 +52,7 @@ body {
   background: var(--paper);
   color: var(--ink);
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

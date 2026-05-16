@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { COUNTRIES, type Country } from '../lib/countries';
+import { COUNTRIES, COUNTRY_BY_ID, COUNTRY_EXTENT_POINTS, type Country } from '../lib/countries';
+import { SAMPLE_POINTS } from '../hooks/useSnowData';
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 
 const glass: React.CSSProperties = {
@@ -41,6 +50,7 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
   const [nearMeQuery, setNearMeQuery]           = useState('');
   const [nearMeActiveIndex, setNearMeActiveIndex] = useState(-1);
   const [nearMePicked, setNearMePicked]         = useState(false);
+  const [nearMeSearching, setNearMeSearching]   = useState(false);
   const inputRef       = useRef<HTMLInputElement>(null);
   const navHeaderRef   = useRef<HTMLElement>(null);
   const nearMePanelRef = useRef<HTMLDivElement>(null);
@@ -111,11 +121,60 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
     });
   }
 
-  function handleGoNearMe() {
-    const country = nearMeSuggestions[nearMeActiveIndex]
-      ?? nearMeSuggestions[0]
+  async function handleGoNearMe() {
+    const origin = nearMeSuggestions[nearMeActiveIndex >= 0 ? nearMeActiveIndex : 0]
       ?? (() => { const q = nearMeQuery.trim().toLowerCase(); return COUNTRIES.find(c => c.name.toLowerCase() === q); })();
-    if (country) { selectCountry(country); setShowNearMe(false); }
+    if (!origin || nearMeSearching) return;
+
+    setNearMeSearching(true);
+    try {
+      // Use min(centroid, sample point) distance — handles both small countries where
+      // sample points are far-north outliers, and large countries (Russia, Canada) where
+      // the centroid is deep inland but the closest territory is near the origin
+      const sorted = SAMPLE_POINTS
+        .filter(([id]) => id !== '010')
+        .map(([id, lat, lon]) => {
+          const centroid = COUNTRY_BY_ID.get(id);
+          const centroidDist = centroid ? haversineKm(origin.lat, origin.lon, centroid.lat, centroid.lon) : Infinity;
+          const sampleDist = haversineKm(origin.lat, origin.lon, lat, lon);
+          const extentDist = Math.min(...(COUNTRY_EXTENT_POINTS.get(id) ?? []).map(([elat, elon]) => haversineKm(origin.lat, origin.lon, elat, elon)), Infinity);
+          return { id, lat, lon, dist: Math.min(centroidDist, sampleDist, extentDist) };
+        })
+        .sort((a, b) => a.dist - b.dist);
+
+      // Single batch request — 80 queried points (excl. Antarctica) fit within Open-Meteo's 100-location limit
+      const lats = sorted.map(p => p.lat.toFixed(4)).join(',');
+      const lons = sorted.map(p => p.lon.toFixed(4)).join(',');
+      const r = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=snow_depth&forecast_days=1&timezone=auto`
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      const results: unknown[] = Array.isArray(data) ? data : [data];
+
+      // Check ALL sample points for origin country first — some countries (Bolivia, Russia, Argentina,
+      // Chile) have multiple sample points; findIndex only returns the first, which may not have snow.
+      const hasOriginSnow = sorted.some((p, i) =>
+        p.id === origin.id &&
+        ((results[i] as { current?: { snow_depth?: number } })?.current?.snow_depth ?? 0) > 0
+      );
+      if (hasOriginSnow) { selectCountry(origin); setShowNearMe(false); return; }
+
+      // Walk sorted order — first hit is geographically closest snowy country
+      for (let i = 0; i < sorted.length; i++) {
+        if (sorted[i]?.id === origin.id) continue; // already checked above
+        const depth = (results[i] as { current?: { snow_depth?: number } })?.current?.snow_depth ?? 0;
+        if (depth > 0) {
+          const country = COUNTRY_BY_ID.get(sorted[i]?.id ?? '');
+          if (country) { selectCountry(country); setShowNearMe(false); return; }
+        }
+      }
+      // No snow found globally — stay put (could add a toast here)
+    } catch {
+      // Network error — silently ignore
+    } finally {
+      setNearMeSearching(false);
+    }
   }
 
   const dropdownSections = useMemo(() => {
@@ -295,13 +354,20 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
           ) : (
             <button
               onClick={() => { setSearchOpen(v => !v); setShowAbout(false); setShowNearMe(false); }}
-              style={{ ...navBtn, padding: '0 0.1rem', display: 'flex', alignItems: 'center' }}
-              aria-label="Search countries"
+              style={{ ...navBtn, padding: '0 0.1rem', display: 'flex', alignItems: 'center', color: searchOpen ? '#f5f5f5' : '#9ca3af' }}
+              aria-label={searchOpen ? 'Close search' : 'Search countries'}
             >
-              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                <circle cx="6.5" cy="6.5" r="4.5" />
-                <line x1="10" y1="10" x2="13.5" y2="13.5" />
-              </svg>
+              {searchOpen ? (
+                <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <line x1="3" y1="3" x2="12" y2="12" />
+                  <line x1="12" y1="3" x2="3" y2="12" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                  <circle cx="6.5" cy="6.5" r="4.5" />
+                  <line x1="10" y1="10" x2="13.5" y2="13.5" />
+                </svg>
+              )}
             </button>
           )}
         </div>
@@ -387,19 +453,25 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
 
               <button
                 onClick={handleGoNearMe}
-                disabled={!nearMeQuery.trim() || nearMeSuggestions.length === 0}
+                disabled={!nearMeQuery.trim() || nearMeSuggestions.length === 0 || nearMeSearching}
                 style={{
                   background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)',
                   borderRadius: '0.65rem', color: '#f5f5f5',
-                  cursor: nearMeQuery.trim() && nearMeSuggestions.length > 0 ? 'pointer' : 'default',
-                  opacity: nearMeQuery.trim() && nearMeSuggestions.length > 0 ? 1 : 0.4,
+                  cursor: nearMeQuery.trim() && nearMeSuggestions.length > 0 && !nearMeSearching ? 'pointer' : 'default',
+                  opacity: nearMeQuery.trim() && nearMeSuggestions.length > 0 && !nearMeSearching ? 1 : 0.4,
                   padding: '0.3rem 0.75rem', display: 'flex', alignItems: 'center',
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="2" y1="7" x2="12" y2="7" />
-                  <polyline points="8,3 12,7 8,11" />
-                </svg>
+                {nearMeSearching ? (
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <circle cx="7" cy="7" r="5" strokeDasharray="20" strokeDashoffset="10" style={{ transformOrigin: '7px 7px', animation: 'spin 0.8s linear infinite' }} />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="2" y1="7" x2="12" y2="7" />
+                    <polyline points="8,3 12,7 8,11" />
+                  </svg>
+                )}
               </button>
               {!wide && nearMeDropdownEl}
             </div>
