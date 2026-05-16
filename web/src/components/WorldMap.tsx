@@ -122,13 +122,14 @@ interface Props {
   snowSet: Set<string>;
   loading: boolean;
   focusedCountry: FocusedCountry | null;
+  onCountryClick?: (id: string) => void;
 }
 
 export interface WorldMapHandle {
   panTo: (lat: number, lon: number, zoom?: number) => void;
 }
 
-export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, loading, focusedCountry }, ref) {
+export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, loading, focusedCountry, onCountryClick }, ref) {
   const focusedCountryId = focusedCountry?.id ?? null;
   const [countries,  setCountries]  = useState<FeatureCollection<Polygon | MultiPolygon> | null>(null);
   const [discoveredSnowCountries, setDiscoveredSnowCountries] = useState<Set<string>>(new Set());
@@ -147,6 +148,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
   const lastMoveRef  = useRef<{ x: number; y: number; t: number } | null>(null);
   const inertiaRafRef   = useRef<number | null>(null);
   const smoothZoomRafRef = useRef<number | null>(null);
+  const didDragRef      = useRef(false);
   const statesLoadedRef = useRef(false);
 
   // ── Resize ───────────────────────────────────────────────────────────────
@@ -304,6 +306,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
       e.preventDefault();
       cancelInertia();
       cancelSmoothZoom();
+      didDragRef.current = false;
       velocityRef.current = { vx: 0, vy: 0 };
       lastMoveRef.current = null;
       if (e.touches.length === 1) {
@@ -322,8 +325,11 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
       e.preventDefault();
       const s = svgScale();
       if (e.touches.length === 1 && dragStart.current) {
-        const dx = (e.touches[0]!.clientX - dragStart.current.cx) / s;
-        const dy = (e.touches[0]!.clientY - dragStart.current.cy) / s;
+        const cdx = e.touches[0]!.clientX - dragStart.current.cx;
+        const cdy = e.touches[0]!.clientY - dragStart.current.cy;
+        if (Math.hypot(cdx, cdy) > 4) didDragRef.current = true;
+        const dx = cdx / s;
+        const dy = cdy / s;
         applyTransform({ k: transformRef.current.k, x: dragStart.current.tx + dx, y: dragStart.current.ty + dy });
         const now = performance.now();
         const last = lastMoveRef.current;
@@ -354,9 +360,17 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
   }, [cancelInertia, applyTransform, zoomAt, clientToSvg, svgScale]);
 
   // ── Mouse handlers ────────────────────────────────────────────────────────
+  function handleCountryTap(clientX: number, clientY: number) {
+    if (didDragRef.current || !onCountryClick) return;
+    const el = document.elementFromPoint(clientX, clientY);
+    const id = el?.getAttribute('data-cid');
+    if (id) onCountryClick(id);
+  }
+
   function onMouseDown(e: React.MouseEvent<SVGSVGElement>) {
     cancelInertia();
     cancelSmoothZoom();
+    didDragRef.current = false;
     velocityRef.current = { vx: 0, vy: 0 };
     lastMoveRef.current = null;
     const t = transformRef.current;
@@ -366,10 +380,11 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
 
   function onMouseMove(e: React.MouseEvent<SVGSVGElement>) {
     if (!dragStart.current) return;
+    const cdx = e.clientX - dragStart.current.cx;
+    const cdy = e.clientY - dragStart.current.cy;
+    if (Math.hypot(cdx, cdy) > 4) didDragRef.current = true;
     const s = svgScale();
-    const dx = (e.clientX - dragStart.current.cx) / s;
-    const dy = (e.clientY - dragStart.current.cy) / s;
-    applyTransform({ k: transformRef.current.k, x: dragStart.current.tx + dx, y: dragStart.current.ty + dy });
+    applyTransform({ k: transformRef.current.k, x: dragStart.current.tx + cdx / s, y: dragStart.current.ty + cdy / s });
     const now = performance.now();
     const last = lastMoveRef.current;
     if (last) {
@@ -382,15 +397,18 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     lastMoveRef.current = { x: e.clientX, y: e.clientY, t: now };
   }
 
-  function onMouseUp() {
+  function onMouseUp(e: React.MouseEvent<SVGSVGElement>) {
     if (dragStart.current) startInertia();
+    handleCountryTap(e.clientX, e.clientY);
     dragStart.current = null;
     lastMoveRef.current = null;
     setDragging(false);
   }
 
-  function onTouchEnd() {
+  function onTouchEnd(e: React.TouchEvent<SVGSVGElement>) {
     if (dragStart.current) startInertia();
+    const t = e.changedTouches[0];
+    if (t) handleCountryTap(t.clientX, t.clientY);
     dragStart.current = null;
     pinchRef.current = null;
     lastMoveRef.current = null;
@@ -481,14 +499,16 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
           {/* ── Layer 1: Country fills ───────────────────────────────────── */}
           {([-1, 0, 1] as const).map(offset => (
             <g key={offset} transform={`translate(${offset * W},0)`}>
-              {paths.map(({ key, d, hasSnow }) => (
+              {paths.map(({ key, d, id, hasSnow }) => (
                 <path
                   key={`${offset}-${key}`}
                   d={d}
+                  data-cid={offset === 0 ? id : undefined}
                   fill={hasSnow ? '#4ade80' : '#3f3f46'}
                   fillOpacity={stage === 1 ? 1 : 0.22}
                   stroke={stage === 1 ? '#111' : 'none'}
                   strokeWidth={strokeW}
+                  style={{ cursor: dragging ? 'grabbing' : 'pointer' }}
                 />
               ))}
             </g>

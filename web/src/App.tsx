@@ -1,8 +1,9 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { Shell } from './components/Shell';
 import { WorldMap, type WorldMapHandle } from './components/WorldMap';
 import { SnowmanNav } from './components/SnowmanNav';
 import { useSnowData } from './hooks/useSnowData';
+import { COUNTRY_BY_ID } from './lib/countries';
 
 function relativeTime(date: Date, now: number): string {
   const secs = Math.floor((now - date.getTime()) / 1000);
@@ -39,9 +40,16 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
+  const handleCountryClick = useCallback((id: string) => {
+    const country = COUNTRY_BY_ID.get(id);
+    if (!country) return;
+    mapRef.current?.panTo(country.lat, country.lon, 5);
+    setFocusedCountry({ id: country.id, name: country.name, lat: country.lat, lon: country.lon });
+  }, []);
+
   return (
     <Shell>
-      <WorldMap ref={mapRef} snowSet={snowSet} loading={loading} focusedCountry={focusedCountry} />
+      <WorldMap ref={mapRef} snowSet={snowSet} loading={loading} focusedCountry={focusedCountry} onCountryClick={handleCountryClick} />
 
       <SnowmanNav
         panTo={(lat, lon, zoom) => mapRef.current?.panTo(lat, lon, zoom)}
