@@ -145,7 +145,8 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
   const svgRef       = useRef<SVGSVGElement>(null);
   const velocityRef  = useRef({ vx: 0, vy: 0 });
   const lastMoveRef  = useRef<{ x: number; y: number; t: number } | null>(null);
-  const inertiaRafRef = useRef<number | null>(null);
+  const inertiaRafRef   = useRef<number | null>(null);
+  const smoothZoomRafRef = useRef<number | null>(null);
   const statesLoadedRef = useRef(false);
 
   // ── Resize ───────────────────────────────────────────────────────────────
@@ -255,6 +256,32 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     applyTransform({ x: svgX - (svgX - prev.x) * ratio, y: svgY - (svgY - prev.y) * ratio, k: newK });
   }, [applyTransform]);
 
+  const cancelSmoothZoom = useCallback(() => {
+    if (smoothZoomRafRef.current !== null) {
+      cancelAnimationFrame(smoothZoomRafRef.current);
+      smoothZoomRafRef.current = null;
+    }
+  }, []);
+
+  const smoothZoomAt = useCallback((svgX: number, svgY: number, factor: number) => {
+    cancelSmoothZoom();
+    const from = transformRef.current;
+    const toK = Math.max(MIN_K, Math.min(MAX_K, from.k * factor));
+    const ratio = toK / from.k;
+    const toX = svgX - (svgX - from.x) * ratio;
+    const toY = svgY - (svgY - from.y) * ratio;
+    const duration = 280;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const p = Math.min((now - t0) / duration, 1);
+      const ease = 1 - Math.pow(1 - p, 3); // ease-out cubic
+      applyTransform({ k: from.k + (toK - from.k) * ease, x: from.x + (toX - from.x) * ease, y: from.y + (toY - from.y) * ease });
+      if (p < 1) smoothZoomRafRef.current = requestAnimationFrame(tick);
+      else smoothZoomRafRef.current = null;
+    };
+    smoothZoomRafRef.current = requestAnimationFrame(tick);
+  }, [cancelSmoothZoom, applyTransform]);
+
   // ── Non-passive wheel ────────────────────────────────────────────────────
   useEffect(() => {
     const svg = svgRef.current;
@@ -276,6 +303,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     const onTouchStart = (e: TouchEvent) => {
       e.preventDefault();
       cancelInertia();
+      cancelSmoothZoom();
       velocityRef.current = { vx: 0, vy: 0 };
       lastMoveRef.current = null;
       if (e.touches.length === 1) {
@@ -328,6 +356,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
   // ── Mouse handlers ────────────────────────────────────────────────────────
   function onMouseDown(e: React.MouseEvent<SVGSVGElement>) {
     cancelInertia();
+    cancelSmoothZoom();
     velocityRef.current = { vx: 0, vy: 0 };
     lastMoveRef.current = null;
     const t = transformRef.current;
@@ -534,7 +563,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
             <button
               onClick={() => {
                 const [sx, sy] = clientToSvg(window.innerWidth / 2, window.innerHeight / 2);
-                zoomAt(sx, sy, f);
+                smoothZoomAt(sx, sy, f);
               }}
               disabled={atLimit}
               style={{
