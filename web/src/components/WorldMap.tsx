@@ -150,6 +150,9 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
   const smoothZoomRafRef = useRef<number | null>(null);
   const didDragRef      = useRef(false);
   const statesLoadedRef = useRef(false);
+  const mapGroupRef     = useRef<SVGGElement>(null);
+  const lastSyncRef     = useRef<number>(0);
+  const syncTimerRef    = useRef<number | null>(null);
 
   // ── Resize ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -201,7 +204,24 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     const y = Math.max(yBot - W * k, Math.min(yTop, t.y));
     const norm: XYK = { x, y, k };
     transformRef.current = norm;
-    setTransform(norm);
+
+    // Direct DOM manipulation — bypasses React for 60fps
+    if (mapGroupRef.current) {
+      mapGroupRef.current.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${k.toFixed(4)})`);
+    }
+
+    // Throttle React state updates to ~10fps during animation
+    const now = performance.now();
+    if (!lastSyncRef.current || now - lastSyncRef.current > 100) {
+      setTransform(norm);
+      lastSyncRef.current = now;
+    }
+
+    // Sync React state once animation settles
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = window.setTimeout(() => {
+      setTransform(transformRef.current);
+    }, 150);
   }, []);
 
   const clientToSvg = useCallback((cx: number, cy: number): [number, number] => {
@@ -483,7 +503,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
         onTouchEnd={onTouchEnd}
         aria-label="World snow map"
       >
-        <g transform={`translate(${tx.toFixed(2)},${ty.toFixed(2)}) scale(${k.toFixed(4)})`}>
+        <g ref={mapGroupRef} transform={`translate(${tx.toFixed(2)},${ty.toFixed(2)}) scale(${k.toFixed(4)})`}>
 
           {/* ── Layer 1: Country fills ───────────────────────────────────── */}
           {([-1, 0, 1] as const).map(offset => (
