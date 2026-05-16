@@ -360,13 +360,6 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
   }, [cancelInertia, applyTransform, zoomAt, clientToSvg, svgScale]);
 
   // ── Mouse handlers ────────────────────────────────────────────────────────
-  function handleCountryTap(clientX: number, clientY: number) {
-    if (didDragRef.current || !onCountryClick) return;
-    const el = document.elementFromPoint(clientX, clientY);
-    const id = el?.getAttribute('data-cid');
-    if (id) onCountryClick(id);
-  }
-
   function onMouseDown(e: React.MouseEvent<SVGSVGElement>) {
     cancelInertia();
     cancelSmoothZoom();
@@ -397,18 +390,15 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     lastMoveRef.current = { x: e.clientX, y: e.clientY, t: now };
   }
 
-  function onMouseUp(e: React.MouseEvent<SVGSVGElement>) {
+  function onMouseUp() {
     if (dragStart.current) startInertia();
-    handleCountryTap(e.clientX, e.clientY);
     dragStart.current = null;
     lastMoveRef.current = null;
     setDragging(false);
   }
 
-  function onTouchEnd(e: React.TouchEvent<SVGSVGElement>) {
+  function onTouchEnd() {
     if (dragStart.current) startInertia();
-    const t = e.changedTouches[0];
-    if (t) handleCountryTap(t.clientX, t.clientY);
     dragStart.current = null;
     pinchRef.current = null;
     lastMoveRef.current = null;
@@ -503,12 +493,13 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
                 <path
                   key={`${offset}-${key}`}
                   d={d}
-                  data-cid={offset === 0 ? id : undefined}
                   fill={hasSnow ? '#4ade80' : '#3f3f46'}
                   fillOpacity={stage === 1 ? 1 : 0.22}
                   stroke={stage === 1 ? '#111' : 'none'}
                   strokeWidth={strokeW}
                   style={{ cursor: dragging ? 'grabbing' : 'pointer' }}
+                  onMouseUp={() => { if (!didDragRef.current && onCountryClick) onCountryClick(id); }}
+                  onTouchEnd={(e) => { if (!didDragRef.current && onCountryClick) { e.preventDefault(); onCountryClick(id); } }}
                 />
               ))}
             </g>
@@ -542,6 +533,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
                     fillOpacity={0.93}
                     stroke="rgba(255,255,255,0.45)"
                     strokeWidth={0.6 / k}
+                    style={{ pointerEvents: 'none' }}
                   />
                 );
               })}
@@ -560,6 +552,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
                     fill="none"
                     stroke={isFocused ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.15)'}
                     strokeWidth={(isFocused ? 2 : 0.8) / k}
+                    style={{ pointerEvents: 'none' }}
                   />
                 );
               })}
