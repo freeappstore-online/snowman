@@ -246,6 +246,10 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     },
   }), [applyTransform]);
 
+  useEffect(() => {
+    applyTransform(transformRef.current);
+  }, [applyTransform]);
+
   const cancelInertia = useCallback(() => {
     if (inertiaRafRef.current !== null) {
       cancelAnimationFrame(inertiaRafRef.current);
@@ -482,7 +486,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     }
   }, [stateSnowMap, focusedCountryId]);
 
-  const { x: tx, y: ty, k } = transform;
+  const { k } = transform;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -503,7 +507,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
         onTouchEnd={onTouchEnd}
         aria-label="World snow map"
       >
-        <g ref={mapGroupRef} transform={`translate(${tx.toFixed(2)},${ty.toFixed(2)}) scale(${k.toFixed(4)})`}>
+        <g ref={mapGroupRef}>
 
           {/* ── Layer 1: Country fills ───────────────────────────────────── */}
           {([-1, 0, 1] as const).map(offset => (
