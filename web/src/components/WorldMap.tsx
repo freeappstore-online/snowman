@@ -462,7 +462,6 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
     }
   }, [stateSnowMap, focusedCountryId]);
 
-  const strokeW = (0.5 / transform.k).toFixed(3);
   const { x: tx, y: ty, k } = transform;
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -496,7 +495,8 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
                   fill={hasSnow ? '#4ade80' : '#3f3f46'}
                   fillOpacity={stage === 1 ? 1 : 0.22}
                   stroke={stage === 1 ? '#111' : 'none'}
-                  strokeWidth={strokeW}
+                  strokeWidth={0.5}
+                  vectorEffect="non-scaling-stroke"
                   style={{ cursor: dragging ? 'grabbing' : 'pointer' }}
                   onMouseUp={() => { if (!didDragRef.current && onCountryClick) onCountryClick(id); }}
                   onTouchEnd={(e) => { if (!didDragRef.current && onCountryClick) { e.preventDefault(); onCountryClick(id); } }}
@@ -532,7 +532,8 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
                     fill={hasSnow ? '#4ade80' : '#2a2a2e'}
                     fillOpacity={0.93}
                     stroke="rgba(255,255,255,0.45)"
-                    strokeWidth={0.6 / k}
+                    strokeWidth={0.6}
+                    vectorEffect="non-scaling-stroke"
                     style={{ pointerEvents: 'none' }}
                   />
                 );
@@ -551,7 +552,8 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
                     d={d}
                     fill="none"
                     stroke={isFocused ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.15)'}
-                    strokeWidth={(isFocused ? 2 : 0.8) / k}
+                    strokeWidth={isFocused ? 2 : 0.8}
+                    vectorEffect="non-scaling-stroke"
                     style={{ pointerEvents: 'none' }}
                   />
                 );
