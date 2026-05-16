@@ -151,7 +151,6 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
   const didDragRef      = useRef(false);
   const statesLoadedRef = useRef(false);
   const mapGroupRef     = useRef<SVGGElement>(null);
-  const lastSyncRef     = useRef<number>(0);
   const syncTimerRef    = useRef<number | null>(null);
 
   // ── Resize ───────────────────────────────────────────────────────────────
@@ -210,17 +209,10 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
       mapGroupRef.current.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${k.toFixed(4)})`);
     }
 
-    // Throttle React state updates to ~10fps during animation
-    const now = performance.now();
-    if (!lastSyncRef.current || now - lastSyncRef.current > 100) {
-      setTransform(norm);
-      lastSyncRef.current = now;
-    }
-
-    // Sync React state once animation settles
+    // Sync React state only after animation fully settles — never mid-frame
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = window.setTimeout(() => {
-      setTransform(transformRef.current);
+      setTransform({ ...transformRef.current });
     }, 150);
   }, []);
 
@@ -291,6 +283,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
 
   const smoothZoomAt = useCallback((svgX: number, svgY: number, factor: number) => {
     cancelSmoothZoom();
+    if (syncTimerRef.current) { clearTimeout(syncTimerRef.current); syncTimerRef.current = null; }
     const from = transformRef.current;
     const toK = Math.max(MIN_K, Math.min(MAX_K, from.k * factor));
     const ratio = toK / from.k;
