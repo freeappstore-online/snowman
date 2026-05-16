@@ -283,6 +283,8 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
 
   const smoothZoomAt = useCallback((svgX: number, svgY: number, factor: number) => {
     cancelSmoothZoom();
+    cancelInertia();
+    dragStart.current = null;
     if (syncTimerRef.current) { clearTimeout(syncTimerRef.current); syncTimerRef.current = null; }
     const from = transformRef.current;
     const toK = Math.max(MIN_K, Math.min(MAX_K, from.k * factor));
@@ -299,7 +301,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
       else smoothZoomRafRef.current = null;
     };
     smoothZoomRafRef.current = requestAnimationFrame(tick);
-  }, [cancelSmoothZoom, applyTransform]);
+  }, [cancelSmoothZoom, cancelInertia, applyTransform]);
 
   // ── Non-passive wheel ────────────────────────────────────────────────────
   useEffect(() => {
