@@ -566,7 +566,7 @@ const didDragRef      = useRef(false);
 
       {/* Zoom controls */}
       <div style={{
-        position: 'absolute', bottom: wide ? 16 : 48, right: 16,
+        position: 'absolute', bottom: wide || focusedCountry ? 16 : 48, right: 16,
         display: 'flex', flexDirection: 'column',
         background: 'rgba(15,15,15,0.88)',
         border: '1px solid rgba(255,255,255,0.12)', borderRadius: '0.5rem',
@@ -599,7 +599,7 @@ const didDragRef      = useRef(false);
 
       {/* Legend */}
       <aside style={{
-        position: 'absolute', bottom: wide ? 16 : 48, left: 16,
+        position: 'absolute', bottom: wide || focusedCountry ? 16 : 48, left: 16,
         background: 'rgba(15,15,15,0.88)',
         border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.75rem',
         padding: '0.5rem 0.75rem', display: 'flex', flexDirection: 'column', gap: 6,

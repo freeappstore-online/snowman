@@ -55,6 +55,7 @@ export default function App() {
         panTo={(lat, lon, zoom) => mapRef.current?.panTo(lat, lon, zoom)}
         snowSet={snowSet}
         onFocusCountry={c => setFocusedCountry(c)}
+        focusedCountry={focusedCountry}
       />
 
       {/* Focused country island — bottom center (desktop) / below nav (mobile) */}
@@ -63,7 +64,7 @@ export default function App() {
           position: 'absolute',
           ...(wide
             ? { bottom: 16, top: 'auto' }
-            : { top: 64, bottom: 'auto' }),
+            : { top: 12, bottom: 'auto' }),
           left: '50%', transform: 'translateX(-50%)', zIndex: 200,
           background: 'rgba(10,10,10,0.88)', border: '1px solid rgba(255,255,255,0.10)',
           borderRadius: '1.25rem', padding: '0.35rem 0.5rem 0.35rem 1rem',
@@ -87,7 +88,8 @@ export default function App() {
       {/* Attribution — bottom center */}
       {!focusedCountry && (
         <div style={{
-          position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 100,
+          position: 'absolute', bottom: 16,
+          left: '50%', transform: 'translateX(-50%)', zIndex: 100,
           fontSize: '0.65rem', color: '#6b7280', textAlign: 'center', whiteSpace: 'nowrap',
         }}>
           {error

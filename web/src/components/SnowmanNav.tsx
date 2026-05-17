@@ -33,9 +33,10 @@ interface Props {
   panTo: (lat: number, lon: number, zoom?: number) => void;
   snowSet: Set<string>;
   onFocusCountry: (c: { id: string; name: string; lat: number; lon: number } | null) => void;
+  focusedCountry: { id: string } | null;
 }
 
-export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
+export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: Props) {
   const [query, setQuery]             = useState('');
   const [showAbout, setShowAbout]     = useState(false);
   const [showNearMe, setShowNearMe]   = useState(false);
@@ -51,6 +52,7 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
   const [nearMeActiveIndex, setNearMeActiveIndex] = useState(-1);
   const [nearMePicked, setNearMePicked]         = useState(false);
   const [nearMeSearching, setNearMeSearching]   = useState(false);
+  const [navRect, setNavRect] = useState<{ left: number; width: number } | null>(null);
   const inputRef       = useRef<HTMLInputElement>(null);
   const navHeaderRef   = useRef<HTMLElement>(null);
   const nearMePanelRef = useRef<HTMLDivElement>(null);
@@ -87,6 +89,18 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
   }, []);
 
   useEffect(() => { if (wide) setSearchOpen(false); }, [wide]);
+
+  useEffect(() => {
+    const update = () => {
+      const r = navHeaderRef.current?.getBoundingClientRect();
+      if (r) setNavRect({ left: r.left, width: r.width });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    if (navHeaderRef.current) ro.observe(navHeaderRef.current);
+    window.addEventListener('resize', update);
+    return () => { ro.disconnect(); window.removeEventListener('resize', update); };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -182,7 +196,7 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
       const results = COUNTRIES.filter(c => c.name.toLowerCase().startsWith(query.toLowerCase()));
       return results.length ? [{ items: results }] : [];
     }
-    if (!searchFocused && !(searchOpen && !wide)) return [];
+    if (!(searchFocused || searchOpen)) return [];
     const historyIds = new Set(history);
     const historyItems = history.map(id => COUNTRIES.find(c => c.id === id)).filter((c): c is Country => !!c);
     const snowItems = COUNTRIES.filter(c => snowSet.has(c.id) && !historyIds.has(c.id))
@@ -205,23 +219,46 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
     inputRef.current?.blur();
   }
 
-  const searchInput = (autoFocus = false, fullWidth = false) => (
-    <input
-      ref={autoFocus ? undefined : inputRef}
-      autoFocus={autoFocus}
-      value={query}
-      onChange={e => setQuery(e.target.value)}
-      onFocus={() => { setShowAbout(false); setShowNearMe(false); setSearchFocused(true); }}
-      onBlur={() => setSearchFocused(false)}
-      onKeyDown={e => {
-        if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => Math.min(i + 1, flatItems.length - 1)); }
-        else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, -1)); }
-        else if (e.key === 'Enter') { e.preventDefault(); const c = flatItems[activeIndex]; if (c) selectCountry(c); }
-      }}
-      placeholder={flatItems[activeIndex]?.name ?? 'Search countries…'}
-      style={{ ...inputStyle, width: fullWidth ? '100%' : 185 }}
-    />
-  );
+  const searchInput = (autoFocus = false, fullWidth = false) => {
+    const activeItem = activeIndex >= 0 ? flatItems[activeIndex] : null;
+    const suffix = activeItem && activeItem.name.toLowerCase().startsWith(query.toLowerCase())
+      ? activeItem.name.slice(query.length) : '';
+    return (
+      <div style={{
+        position: 'relative', width: fullWidth ? '100%' : 185,
+        background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.12)',
+        borderRadius: '0.65rem',
+      }}>
+        {suffix && (
+          <div aria-hidden style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            padding: '0.3rem 0.7rem', boxSizing: 'border-box',
+            fontSize: '0.78rem', fontFamily: 'inherit',
+            display: 'flex', alignItems: 'center',
+            pointerEvents: 'none', overflow: 'hidden', whiteSpace: 'pre',
+          }}>
+            <span style={{ color: 'transparent' }}>{query}</span>
+            <span style={{ color: 'rgba(245,245,245,0.5)' }}>{suffix}</span>
+          </div>
+        )}
+        <input
+          ref={autoFocus ? undefined : inputRef}
+          autoFocus={autoFocus}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onFocus={() => { setShowAbout(false); setShowNearMe(false); setSearchFocused(true); }}
+          onBlur={() => setSearchFocused(false)}
+          onKeyDown={e => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => Math.min(i + 1, flatItems.length - 1)); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, -1)); }
+            else if (e.key === 'Enter') { e.preventDefault(); const c = flatItems[activeIndex]; if (c) selectCountry(c); }
+          }}
+          placeholder={suffix ? '' : 'Search countries…'}
+          style={{ ...inputStyle, width: '100%', background: 'transparent', border: 'none', borderRadius: 0, position: 'relative', zIndex: 1 }}
+        />
+      </div>
+    );
+  };
 
   function clearHistory() {
     setHistory([]);
@@ -305,18 +342,25 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
     </div>
   ) : null;
 
+  if (!wide && focusedCountry) return null;
+
   return (
     <>
       {/* Main navbar pill */}
       <header ref={navHeaderRef} style={{
         ...glass,
-        position: 'absolute', top: 12, left: '50%',
-        transform: 'translateX(-50%)', zIndex: 200,
+        position: 'absolute', top: 12, zIndex: 200,
         borderRadius: '1.25rem',
-        padding: wide ? '0 0.35rem 0 0.875rem' : '0 0.875rem',
         height: 44,
         display: 'flex', alignItems: 'center', gap: '0.2rem',
-        width: 'max-content', maxWidth: '92vw',
+        ...(wide ? {
+          left: '50%', transform: 'translateX(-50%)',
+          width: 'max-content', maxWidth: '92vw',
+          padding: '0 0.75rem 0 0.875rem',
+        } : {
+          left: 8, right: 8,
+          padding: '0 0.875rem',
+        }),
       }}>
         {/* Brand */}
         <span style={{
@@ -341,41 +385,54 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
         </button>
 
         {/* Search */}
-        <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '0.5rem' }}>
-          {wide ? (
+        <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '0.5rem', marginLeft: 'auto' }}>
+          <button
+            onClick={() => { setSearchOpen(v => !v); setShowAbout(false); setShowNearMe(false); }}
+            style={{ ...navBtn, padding: '0 0.1rem', display: 'flex', alignItems: 'center', color: searchOpen ? '#f5f5f5' : '#9ca3af' }}
+            aria-label={searchOpen ? 'Close search' : 'Search countries'}
+          >
+            {searchOpen ? (
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <line x1="3" y1="3" x2="12" y2="12" />
+                <line x1="12" y1="3" x2="3" y2="12" />
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <circle cx="6.5" cy="6.5" r="4.5" />
+                <line x1="10" y1="10" x2="13.5" y2="13.5" />
+              </svg>
+            )}
+          </button>
+        </div>
+      </header>
+
+      {/* Wide search panel */}
+      {wide && searchOpen && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 198 }} onClick={() => setSearchOpen(false)} />
+          <div style={{
+            ...glass, borderRadius: '1rem',
+            position: 'absolute', top: 64, zIndex: 199,
+            ...(navRect
+              ? { left: navRect.left, width: navRect.width }
+              : { left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 340px)' }),
+            padding: '0.5rem',
+          }}>
             <div style={{ position: 'relative' }}>
-              {searchInput()}
+              {searchInput(true, true)}
               {dropdownSections.length > 0 && (
-                <div onMouseDown={e => e.preventDefault()} style={{ ...glass, position: 'absolute', top: 'calc(100% + 6px)', right: 0, borderRadius: '0.85rem', minWidth: '100%', zIndex: 300, overflow: 'hidden', maxHeight: 'calc(100dvh - 80px)', overflowY: 'auto' }}>
+                <div onMouseDown={e => e.preventDefault()} style={{
+                  ...glass, borderRadius: '0.85rem',
+                  position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0,
+                  zIndex: 300, overflow: 'hidden',
+                  maxHeight: 'calc(100dvh - 140px)', overflowY: 'auto',
+                }}>
                   {renderSections()}
                 </div>
               )}
             </div>
-          ) : (
-            <button
-              onClick={() => { setSearchOpen(v => !v); setShowAbout(false); setShowNearMe(false); }}
-              style={{ ...navBtn, padding: '0 0.1rem', display: 'flex', alignItems: 'center', color: searchOpen ? '#f5f5f5' : '#9ca3af' }}
-              aria-label={searchOpen ? 'Close search' : 'Search countries'}
-            >
-              {searchOpen ? (
-                <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                  <line x1="3" y1="3" x2="12" y2="12" />
-                  <line x1="12" y1="3" x2="3" y2="12" />
-                </svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                  <circle cx="6.5" cy="6.5" r="4.5" />
-                  <line x1="10" y1="10" x2="13.5" y2="13.5" />
-                </svg>
-              )}
-            </button>
-          )}
-        </div>
-      </header>
-
-      {/* Wide search backdrop */}
-      {wide && dropdownSections.length > 0 && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 199 }} onClick={() => { setSearchFocused(false); inputRef.current?.blur(); }} />
+          </div>
+        </>
       )}
 
       {/* Narrow search overlay */}
@@ -406,10 +463,11 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
         <>
           <div ref={nearMePanelRef} style={{
             ...glass, borderRadius: '1rem',
-            position: 'absolute', top: 64, left: '50%',
-            transform: 'translateX(-50%)',
-            width: 'min(92vw, 340px)', zIndex: 199,
+            position: 'absolute', top: 64, zIndex: 199,
             padding: '0.5rem 0.5rem 0.35rem',
+            ...(navRect
+              ? { left: navRect.left, width: navRect.width }
+              : { left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 340px)' }),
           }}>
             {/* Input row */}
             <div style={{ display: 'flex', gap: '0.4rem', ...(!wide && { position: 'relative' }) }}>
@@ -495,11 +553,12 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry }: Props) {
         <>
           <div ref={aboutPanelRef} style={{
             ...glass, borderRadius: '1rem',
-            position: 'absolute', top: 64, left: '50%',
-            transform: 'translateX(-50%)',
-            width: 'min(92vw, 340px)', zIndex: 199,
+            position: 'absolute', top: 64, zIndex: 199,
             padding: '1.1rem 1.25rem',
             maxHeight: 'calc(100dvh - 80px)', overflowY: 'auto',
+            ...(navRect
+              ? { left: navRect.left, width: navRect.width }
+              : { left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 340px)' }),
           }}>
             <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.1rem', fontWeight: 800, color: '#f5f5f5', margin: '0 0 0.5rem' }}>
               Snowman
