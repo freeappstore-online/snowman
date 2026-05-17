@@ -146,7 +146,6 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
       // sample points are far-north outliers, and large countries (Russia, Canada) where
       // the centroid is deep inland but the closest territory is near the origin
       const sorted = SAMPLE_POINTS
-        .filter(([id]) => id !== '010')
         .map(([id, lat, lon]) => {
           const centroid = COUNTRY_BY_ID.get(id);
           const centroidDist = centroid ? haversineKm(origin.lat, origin.lon, centroid.lat, centroid.lon) : Infinity;
@@ -156,7 +155,7 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
         })
         .sort((a, b) => a.dist - b.dist);
 
-      // Single batch request — 80 queried points (excl. Antarctica) fit within Open-Meteo's 100-location limit
+      // Single batch request — all points fit within Open-Meteo's 100-location limit
       const lats = sorted.map(p => p.lat.toFixed(4)).join(',');
       const lons = sorted.map(p => p.lon.toFixed(4)).join(',');
       const r = await fetch(

@@ -2,6 +2,7 @@ import React, { forwardRef, useImperativeHandle, useEffect, useRef, useState, us
 import * as topojson from 'topojson-client';
 import type { Topology, GeometryCollection } from 'topojson-specification';
 import type { FeatureCollection, Feature, Polygon, MultiPolygon } from 'geojson';
+import { geoMercator, geoPath } from 'd3-geo';
 import { useStateSnow } from '../hooks/useStateSnow';
 import { SAMPLE_POINTS } from '../hooks/useSnowData';
 
@@ -63,43 +64,19 @@ const ADM0_TO_NUMERIC: Record<string, string> = {
 };
 
 // ─── Projection helpers ────────────────────────────────────────────────────
-function project(lon: number, lat: number): [number, number] {
-  const x = ((lon + 180) / 360) * W;
-  const c = Math.max(-85.051, Math.min(85.051, lat));
-  const r = (c * Math.PI) / 180;
-  const y = ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * W;
-  return [x, y];
-}
+const projection = geoMercator()
+  .scale(W / (2 * Math.PI))
+  .translate([W / 2, W / 2]);
 
-function ringToD(ring: number[][]): string {
-  let path = '';
-  let lonOffset = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const lon = ring[i]![0] ?? 0;
-    const lat = ring[i]![1] ?? 0;
-    if (i > 0) {
-      const prevLon = ring[i - 1]![0] ?? 0;
-      const delta = lon - prevLon;
-      if (delta > 180) lonOffset -= 360;
-      else if (delta < -180) lonOffset += 360;
-    }
-    const [x, y] = project(lon + lonOffset, lat);
-    path += `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-  }
-  if (lonOffset !== 0) {
-    const bottomY = project(0, -85.051)[1];
-    const endX = project((ring[ring.length - 1]?.[0] ?? 0) + lonOffset, 0)[0];
-    const startX = project(ring[0]![0] ?? 0, 0)[0];
-    path += `L${endX.toFixed(1)},${bottomY.toFixed(1)}`;
-    path += `L${startX.toFixed(1)},${bottomY.toFixed(1)}`;
-  }
-  return path + 'Z';
-}
+const pathGenerator = geoPath().projection(projection);
 
 function featureToD(f: Feature<Polygon | MultiPolygon>): string {
-  const g = f.geometry;
-  if (g.type === 'Polygon') return g.coordinates.map(r => ringToD(r)).join('');
-  return g.coordinates.flatMap(p => p.map(r => ringToD(r))).join('');
+  return pathGenerator(f as Parameters<typeof pathGenerator>[0]) || '';
+}
+
+function project(lon: number, lat: number): [number, number] {
+  const pt = projection([lon, lat]);
+  return pt ?? [W / 2, W / 2];
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -120,7 +97,6 @@ interface FocusedCountry { id: string; name: string; lat: number; lon: number }
 
 interface Props {
   snowSet: Set<string>;
-  loading: boolean;
   focusedCountry: FocusedCountry | null;
   onCountryClick?: (id: string) => void;
   onOceanClick?: () => void;
@@ -130,10 +106,10 @@ export interface WorldMapHandle {
   panTo: (lat: number, lon: number, zoom?: number) => void;
 }
 
-export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, loading, focusedCountry, onCountryClick, onOceanClick }, ref) {
+export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, focusedCountry, onCountryClick, onOceanClick }, ref) {
   const focusedCountryId = focusedCountry?.id ?? null;
   const [countries,  setCountries]  = useState<FeatureCollection<Polygon | MultiPolygon> | null>(null);
-  const [discoveredSnowCountries, setDiscoveredSnowCountries] = useState<Set<string>>(new Set());
+  const [borders,    setBorders]    = useState<string>('');
   const [statesData, setStatesData] = useState<FeatureCollection<Polygon | MultiPolygon, StateProperties> | null>(null);
   const [mapError,   setMapError]   = useState(false);
   const [transform,  setTransform]  = useState<XYK>({ x: 0, y: 0, k: 1 });
@@ -142,7 +118,8 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
 
   const transformRef = useRef<XYK>({ x: 0, y: 0, k: 1 });
   const clipRef      = useRef(computeClip(window.innerWidth, window.innerHeight));
-  const dragStart    = useRef<{ cx: number; cy: number; tx: number; ty: number } | null>(null);
+  const dragStart       = useRef<{ cx: number; cy: number; tx: number; ty: number } | null>(null);
+  const mouseDownOnMap  = useRef(false);
   const pinchRef     = useRef<{ dist: number } | null>(null);
   const svgRef       = useRef<SVGSVGElement>(null);
   const velocityRef  = useRef({ vx: 0, vy: 0 });
@@ -173,6 +150,12 @@ const didDragRef      = useRef(false);
           topo.objects['countries'] as GeometryCollection<Record<string, unknown>>
         ) as FeatureCollection<Polygon | MultiPolygon>;
         setCountries(fc);
+        const mesh = topojson.mesh(
+          topo,
+          topo.objects['countries'] as GeometryCollection<Record<string, unknown>>,
+          (a, b) => a !== b
+        );
+        setBorders(pathGenerator(mesh as Parameters<typeof pathGenerator>[0]) || '');
       })
       .catch(() => setMapError(true));
   }, []);
@@ -202,12 +185,16 @@ const didDragRef      = useRef(false);
     const { yTop, yBot } = clipRef.current;
     const y = Math.max(yBot - W * k, Math.min(yTop, t.y));
     const norm: XYK = { x, y, k };
+    const prevK = transformRef.current.k;
     transformRef.current = norm;
 
     // Direct DOM manipulation — bypasses React for 60fps
     if (mapGroupRef.current) {
       mapGroupRef.current.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${k.toFixed(4)})`);
     }
+
+    // Update buttons immediately when entering or leaving a zoom limit
+    if (k === MIN_K || k === MAX_K || prevK === MIN_K || prevK === MAX_K) setTransform(norm);
 
     // Sync React state only after animation fully settles — never mid-frame
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
@@ -353,6 +340,7 @@ const didDragRef      = useRef(false);
   function onMouseDown(e: React.MouseEvent<SVGSVGElement>) {
     cancelInertia();
     didDragRef.current = false;
+    mouseDownOnMap.current = true;
     velocityRef.current = { vx: 0, vy: 0 };
     lastMoveRef.current = null;
     const t = transformRef.current;
@@ -380,10 +368,12 @@ const didDragRef      = useRef(false);
   }
 
   function onMouseUp(e: React.MouseEvent<SVGSVGElement>) {
+    if (!mouseDownOnMap.current) return;
     const isOcean = !didDragRef.current && (e.target as SVGElement).tagName !== 'path';
     if (dragStart.current) startInertia();
     dragStart.current = null;
     lastMoveRef.current = null;
+    mouseDownOnMap.current = false;
     setDragging(false);
     if (isOcean) onOceanClick?.();
   }
@@ -392,6 +382,7 @@ const didDragRef      = useRef(false);
     if (dragStart.current) startInertia();
     dragStart.current = null;
     lastMoveRef.current = null;
+    mouseDownOnMap.current = false;
     setDragging(false);
   }
 
@@ -410,9 +401,9 @@ const didDragRef      = useRef(false);
     if (!countries) return [];
     return countries.features.map((f, i) => {
       const id = String(f.id ?? '').padStart(3, '0');
-      return { key: i, id, d: featureToD(f), hasSnow: snowSet.has(id) || discoveredSnowCountries.has(id) };
+      return { key: i, id, d: featureToD(f) };
     });
-  }, [countries, snowSet, discoveredSnowCountries]);
+  }, [countries]);
 
   const statePaths = useMemo(() => {
     if (!statesData) return [];
@@ -431,8 +422,6 @@ const didDragRef      = useRef(false);
     return statePaths.filter(s => ADM0_TO_NUMERIC[s.adm0] === focusedCountryId);
   }, [statePaths, focusedCountryId]);
 
-  const stage = focusedCountryId ? 2 : 1;
-
   const visibleStates = useMemo(() => {
     const states = visibleStatePaths.map(s => ({ id: s.stateId, lat: s.lat, lon: s.lon }));
     // Always append the ERA5 snow-optimized point so countries with missing/sparse
@@ -448,19 +437,7 @@ const didDragRef      = useRef(false);
 
   const { snowMap: stateSnowMap, loading: stateLoading } = useStateSnow(visibleStates, focusedCountryId);
 
-  // Persist state-level snow findings back to the country-level view
-  useEffect(() => {
-    if (!focusedCountryId || stateSnowMap.size === 0) return;
-    const hasAnySnow = [...stateSnowMap.values()].some(v => v);
-    if (hasAnySnow) {
-      setDiscoveredSnowCountries(prev => {
-        if (prev.has(focusedCountryId)) return prev;
-        const next = new Set(prev);
-        next.add(focusedCountryId);
-        return next;
-      });
-    }
-  }, [stateSnowMap, focusedCountryId]);
+  const stage = focusedCountryId ? 2 : 1;
 
   const { k } = transform;
 
@@ -488,20 +465,30 @@ const didDragRef      = useRef(false);
           {/* ── Layer 1: Country fills ───────────────────────────────────── */}
           {([-1, 0, 1] as const).map(offset => (
             <g key={offset} transform={`translate(${offset * W},0)`}>
-              {paths.map(({ key, d, id, hasSnow }) => (
+              {paths.map(({ key, d, id }) => (
                 <path
                   key={`${offset}-${key}`}
                   d={d}
-                  fill={hasSnow ? '#4ade80' : '#3f3f46'}
+                  fill={stage === 1 && snowSet.has(id) ? '#4ade80' : '#3f3f46'}
                   fillOpacity={stage === 1 ? 1 : 0.22}
-                  stroke={stage === 1 ? '#111' : 'none'}
+                  stroke="none"
                   strokeWidth={0.5}
                   vectorEffect="non-scaling-stroke"
                   style={{ cursor: dragging ? 'grabbing' : 'pointer' }}
-                  onMouseUp={() => { if (!didDragRef.current && onCountryClick) onCountryClick(id); }}
+                  onMouseUp={() => { if (mouseDownOnMap.current && !didDragRef.current && onCountryClick) onCountryClick(id); }}
                   onTouchEnd={(e) => { if (!didDragRef.current && onCountryClick) { e.preventDefault(); onCountryClick(id); } }}
                 />
               ))}
+              {stage === 1 && borders && (
+                <path
+                  d={borders}
+                  fill="none"
+                  stroke="#111"
+                  strokeWidth={0.5}
+                  vectorEffect="non-scaling-stroke"
+                  style={{ pointerEvents: 'none' }}
+                />
+              )}
             </g>
           ))}
 
@@ -551,7 +538,7 @@ const didDragRef      = useRef(false);
                     key={`outline-${offset}-${key}`}
                     d={d}
                     fill="none"
-                    stroke={isFocused ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.15)'}
+                    stroke={id === '010' ? 'none' : (isFocused ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.15)')}
                     strokeWidth={isFocused ? 2 : 0.8}
                     vectorEffect="non-scaling-stroke"
                     style={{ pointerEvents: 'none' }}
@@ -612,7 +599,7 @@ const didDragRef      = useRef(false);
         ))}
       </aside>
 
-      {(!countries || loading || stateLoading) && !mapError && (
+      {(!countries || stateLoading) && !mapError && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(0,0,0,0.55)', pointerEvents: 'none',

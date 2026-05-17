@@ -1,90 +1,76 @@
 import { useState, useEffect } from 'react';
 
 
-// [countryCode, lat, lon] — ERA5-optimized best snow point per country (find_best_snow_points.py).
-// Countries not found by ERA5 use manually selected high-elevation fallback points.
+// [countryCode, lat, lon] — ERA5 seasonal snow coordinates (find_seasonal_snow.py).
+// Criteria: winter snowfall > 0 mm AND summer snowfall = 0 mm (eliminates glacier bias).
+// Points marked "original" kept their seed — the grid search drifted outside the country.
 export const SAMPLE_POINTS: [string, number, number][] = [
-  ['004',  36.38,  71.46], // Afghanistan
+  ['004',  34.52,  73.18], // Afghanistan
   ['008',  40.63,  20.26], // Albania
-  ['010', -90.00,   0.00], // Antarctica
-  ['012',  36.37,   6.61], // Algeria — Constantine highlands (manual)
-  ['032', -41.14, -71.31], // Argentina — Bariloche (seasonal Andean snow, replaces glacial Patagonia point)
-  ['032', -32.89, -68.83], // Argentina — Mendoza Andes (northern Andes, closer to Chile/Bolivia)
-  ['036', -41.75, 145.95], // Australia
-  ['040',  47.36,  10.54], // Austria
+  ['010', -78.52, -85.61], // Antarctica — Vinson Massif
+  ['012',  36.37,   6.61], // Algeria
+  ['032', -38.42, -71.12], // Argentina — Goldilocks peak 50.05
+  ['036', -36.45, 148.26], // Australia — Mount Kosciuszko (manual)
+  ['040',  47.52,  14.55], // Austria — Goldilocks peak 41.30
   ['056',  50.49,   5.56], // Belgium
-  ['064',  27.71,  89.76], // Bhutan
-  ['068', -16.50, -68.15], // Bolivia — La Paz (manual)
-  ['068', -19.57, -65.75], // Bolivia — Potosí (manual)
-  ['076', -29.17, -51.18], // Brazil — Rio Grande do Sul (manual)
-  ['100',  42.22,  23.36], // Bulgaria
-  ['104',  27.33,  97.41], // Myanmar — Putao far north (manual)
-  ['120',   5.95,  10.16], // Cameroon — Bamenda highlands (manual)
-  ['124',  60.68,-140.04], // Canada
-  ['152', -54.93, -70.43], // Chile — Tierra del Fuego (southern)
-  ['152', -38.39, -71.62], // Chile — Villarrica/Lake District (central Andes seasonal)
-  ['156',  31.16,  92.63], // China
-  ['170',   6.79, -72.63], // Colombia
-  ['180',   0.14,  29.29], // DR Congo — Rwenzori (manual)
-  ['191',  45.44,  14.50], // Croatia
+  ['064',  27.47,  89.64], // Bhutan
+  ['068', -16.50, -68.15], // Bolivia — La Paz
+  ['100',  42.73,  21.74], // Bulgaria — Goldilocks peak 25.62
+  ['104',  27.33,  97.41], // Myanmar
+  ['124',  68.87, -90.80], // Canada — Nunavut Goldilocks peak 10.92
+  ['152', -39.43, -71.54], // Chile — Goldilocks peak 39.55
+  ['156',  28.36, 100.45], // China — Yunnan Goldilocks peak 12.60
+  ['191',  45.10,  15.20], // Croatia — Goldilocks peak 34.44
   ['203',  49.55,  15.06], // Czechia
   ['208',  55.56,   9.10], // Denmark
-  ['231',   9.02,  38.75], // Ethiopia — Addis Ababa highlands (manual)
   ['246',  68.81,  21.63], // Finland
   ['250',  45.63,   3.18], // France
-  ['268',  42.05,  45.00], // Georgia
-  ['276',  48.27,   8.87], // Germany
-  ['300',  39.80,  22.62], // Greece
-  ['304',  60.81, -44.06], // Greenland
-  ['320',  14.84, -91.52], // Guatemala — Quetzaltenango (manual)
+  ['268',  42.32,  43.36], // Georgia — Goldilocks peak 33.74
+  ['276',  47.42,  10.45], // Germany — Goldilocks peak 43.61
+  ['300',  39.07,  21.82], // Greece — Goldilocks peak 28.00
+  ['304',  72.00, -40.00], // Greenland — Summit Camp (permanent ice)
   ['348',  46.74,  21.10], // Hungary
-  ['352',  64.38, -17.52], // Iceland
-  ['356',  33.73,  77.16], // India
-  ['360',  -4.00, 137.00], // Indonesia — Papua highlands (manual)
-  ['364',  36.07,  51.04], // Iran
-  ['368',  36.19,  44.01], // Iraq — Erbil / Kurdistan (manual)
+  ['352',  64.14, -17.90], // Iceland
+  ['356',  28.61,  77.20], // India
+  ['364',  32.43,  49.94], // Iran — Goldilocks peak 30.31
+  ['368',  36.97,  43.68], // Iraq — Goldilocks peak 31.92
   ['372',  52.44,  -9.48], // Ireland
-  ['376',  32.97,  35.50], // Israel — Safed / Hermon (manual)
+  ['376',  32.97,  35.50], // Israel
   ['380',  46.49,  11.59], // Italy
-  ['392',  45.27, 141.96], // Japan
-  ['398',  45.60,  81.49], // Kazakhstan
-  ['404',  -0.01,  37.07], // Kenya — Mt. Kenya (manual)
+  ['392',  36.20, 138.25], // Japan — Goldilocks peak 18.76
+  ['398',  51.18,  83.45], // Kazakhstan
   ['408',  40.68, 127.19], // North Korea
   ['410',  38.20, 127.62], // South Korea
-  ['417',  40.17,  74.24], // Kyrgyzstan
+  ['417',  42.87,  74.59], // Kyrgyzstan — Bishkek
   ['440',  54.90,  23.92], // Lithuania
-  ['484',  27.55,-107.36], // Mexico
-  ['496',  50.57,  98.75], // Mongolia
-  ['504',  33.53,  -5.11], // Morocco — Ifrane (manual)
-  ['524',  27.71,  85.31], // Nepal — Kathmandu (manual)
+  ['484',  31.13,-110.05], // Mexico — Goldilocks peak 4.27
+  ['496',  50.61, 111.35], // Mongolia — Goldilocks peak 12.25
+  ['504',  33.53,  -5.11], // Morocco — Ifrane
+  ['524',  27.71,  85.31], // Nepal
   ['528',  53.01,   6.55], // Netherlands
-  ['554', -45.59, 169.02], // New Zealand
-  ['578',  66.57,  13.89], // Norway
-  ['586',  36.72,  73.82], // Pakistan
-  ['604', -11.34, -76.34], // Peru
-  ['608',  16.41, 120.59], // Philippines — Baguio (manual)
+  ['554', -44.65, 168.93], // New Zealand — Goldilocks peak 23.66
+  ['578',  64.22,  12.22], // Norway — Goldilocks peak 17.15
+  ['586',  33.90,  73.39], // Pakistan — Murree
+  ['604', -12.94, -75.02], // Peru — Goldilocks peak 14.21
   ['616',  50.00,  21.15], // Poland
   ['620',  41.51,  -6.29], // Portugal
   ['642',  46.66,  25.27], // Romania
-  ['643',  76.19,  63.00], // Russia — Ural/western
-  ['643',  43.12, 131.89], // Russia — Vladivostok (Pacific neighbors)
-  ['682',  28.38,  36.57], // Saudi Arabia — Tabuk (manual)
-  ['704',  22.34, 103.84], // Vietnam — Sa Pa (manual)
-  ['710', -33.96,  19.46], // South Africa
-  ['724',  42.64,   0.82], // Spain
-  ['752',  66.33,  16.13], // Sweden
-  ['756',  46.81,   8.94], // Switzerland
+  ['643',  54.02,  97.82], // Russia — Krasnoyarsk Goldilocks peak 13.30
+  ['643',  62.03, 129.73], // Russia — Yakutsk (shoulder season Sep–May)
+  ['682',  28.38,  36.57], // Saudi Arabia
+  ['704',  22.34, 103.84], // Vietnam — Sa Pa
+  ['710', -26.81,  30.44], // South Africa — Goldilocks peak 2.17
+  ['724',  40.46,   0.00], // Spain — Goldilocks peak 6.58
+  ['752',  60.13,  14.89], // Sweden — Goldilocks peak 20.51
+  ['756',  46.82,   8.23], // Switzerland — Goldilocks peak 31.08
   ['760',  35.30,  38.76], // Syria
-  ['762',  37.67,  72.37], // Tajikistan
-  ['792',  40.81,  40.67], // Turkey
-  ['800',   0.67,  30.27], // Uganda — Rwenzori (manual)
-  ['804',  48.22,  25.14], // Ukraine
-  ['826',  56.94,  -3.61], // United Kingdom
-  ['834',  -3.35,  37.33], // Tanzania — Kilimanjaro (manual)
-  ['840',  64.84,-147.72], // United States — Fairbanks AK (seasonal winter snow)
+  ['762',  38.55,  68.77], // Tajikistan — Dushanbe
+  ['792',  42.71,  42.74], // Turkey — Goldilocks peak 47.88
+  ['804',  48.38,  38.67], // Ukraine — Goldilocks peak 26.04
+  ['826',  56.94,  -3.61], // United Kingdom — Scottish Highlands
+  ['840',  40.84, -99.46], // USA — Nebraska Goldilocks peak 21.00
   ['858', -33.98, -55.44], // Uruguay
   ['860',  42.20,  70.99], // Uzbekistan
-  ['862',   8.60, -71.16], // Venezuela — Mérida Andes (manual)
 ];
 
 interface SnowDataResult {
@@ -101,20 +87,6 @@ export function useSnowData(): SnowDataResult {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
-    // Check 1-minute cache first
-    try {
-      const cached = localStorage.getItem('world_snow_cache_v1');
-      if (cached) {
-        const { data, time } = JSON.parse(cached) as { data: string[]; time: number };
-        if (Date.now() - time < 60_000) {
-          setSnowSet(new Set(data));
-          setLastUpdated(new Date(time));
-          setLoading(false);
-          return;
-        }
-      }
-    } catch {}
-
     const lats = SAMPLE_POINTS.map(p => p[1]).join(',');
     const lons = SAMPLE_POINTS.map(p => p[2]).join(',');
 
@@ -136,12 +108,6 @@ export function useSnowData(): SnowDataResult {
         });
         setSnowSet(snowy);
         setLastUpdated(new Date());
-        try {
-          localStorage.setItem('world_snow_cache_v1', JSON.stringify({
-            data: Array.from(snowy),
-            time: Date.now(),
-          }));
-        } catch {}
       })
       .catch(err => setError(String(err)))
       .finally(() => setLoading(false));
