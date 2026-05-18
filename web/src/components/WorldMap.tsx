@@ -170,7 +170,6 @@ const didDragRef      = useRef(false);
   const statesLoadedRef = useRef(false);
   const mapGroupRef     = useRef<SVGGElement>(null);
   const syncTimerRef    = useRef<number | null>(null);
-  const ctmRef          = useRef<{ a: number; e: number; f: number } | null>(null);
 
   // ── Resize ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -223,29 +222,32 @@ const didDragRef      = useRef(false);
   const applyTransform = useCallback((t: XYK) => {
     const k = Math.max(MIN_K, Math.min(MAX_K, t.k));
     const ww = W * k;
-    const x = ((t.x % ww) + ww) % ww;
+
+    // Center the modulo wrap so the teleport happens before exposing blank edges
+    const half = ww / 2;
+    const x = ((((t.x + half) % ww) + ww) % ww) - half;
+
     const { yTop, yBot } = clipRef.current;
     const y = Math.max(yBot - W * k, Math.min(yTop, t.y));
     const norm: XYK = { x, y, k };
     const prevK = transformRef.current.k;
     transformRef.current = norm;
 
-    // CSS matrix transform — GPU-composited by the browser compositor thread
     if (mapGroupRef.current) {
-      const ctm = ctmRef.current;
-      if (ctm) {
-        const cssX = ctm.a * x + ctm.e * (1 - k);
-        const cssY = ctm.a * y + ctm.f * (1 - k);
-        mapGroupRef.current.style.transform = `matrix(${k},0,0,${k},${cssX.toFixed(2)},${cssY.toFixed(2)})`;
-      } else {
-        mapGroupRef.current.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${k.toFixed(4)})`);
-      }
+      // SVG attribute transform always scales from (0,0) — CSS matrix drifts due to bounding-box transform-origin
+      mapGroupRef.current.style.transform = '';
+      mapGroupRef.current.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${k.toFixed(4)})`);
     }
 
-    // Update buttons immediately when entering or leaving a zoom limit
-    if (k === MIN_K || k === MAX_K || prevK === MIN_K || prevK === MAX_K) setTransform(norm);
+    // Only trigger React re-render when crossing a zoom limit boundary, not on every frame
+    const atMin = k <= MIN_K;
+    const atMax = k >= MAX_K;
+    const wasMin = prevK <= MIN_K;
+    const wasMax = prevK >= MAX_K;
+    if (atMin !== wasMin || atMax !== wasMax) {
+      setTransform(norm);
+    }
 
-    // Sync React state only after animation fully settles — never mid-frame
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = window.setTimeout(() => {
       setTransform({ ...transformRef.current });
@@ -274,18 +276,11 @@ const didDragRef      = useRef(false);
     },
   }), [applyTransform]);
 
-  // ── Seed CTM on mount + re-apply on resize (must come after applyTransform) ─
+  // ── Re-apply transform on resize to recompute y clamp ────────────────────
   useEffect(() => {
-    const seedAndApply = () => {
-      requestAnimationFrame(() => {
-        const ctm = svgRef.current?.getScreenCTM();
-        if (ctm) ctmRef.current = { a: ctm.a, e: ctm.e, f: ctm.f };
-        applyTransform(transformRef.current);
-      });
-    };
-    seedAndApply();
-    window.addEventListener('resize', seedAndApply);
-    return () => window.removeEventListener('resize', seedAndApply);
+    const onResize = () => applyTransform(transformRef.current);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, [applyTransform]);
 
   const cancelInertia = useCallback(() => {
