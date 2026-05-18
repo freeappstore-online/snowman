@@ -292,6 +292,7 @@ const didDragRef      = useRef(false);
         pinchRef.current = null;
       } else if (e.touches.length === 2) {
         dragStart.current = null;
+        didDragRef.current = true;
         const t0 = e.touches[0]!; const t1 = e.touches[1]!;
         const dx = t0.clientX - t1.clientX; const dy = t0.clientY - t1.clientY;
         pinchRef.current = { dist: Math.sqrt(dx * dx + dy * dy) };
