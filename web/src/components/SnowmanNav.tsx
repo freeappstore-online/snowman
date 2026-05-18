@@ -290,9 +290,9 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
 
   if (!wide && focusedCountry) return null;
 
-  const panelPos = navRect
-    ? { left: navRect.left, width: navRect.width }
-    : { left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 340px)' };
+  const panelPos = wide
+    ? (navRect ? { left: navRect.left, width: navRect.width } : { left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 340px)' })
+    : { left: 8, right: 8 };
 
   return (
     <>
