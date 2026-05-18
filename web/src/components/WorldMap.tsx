@@ -234,9 +234,10 @@ const didDragRef      = useRef(false);
     transformRef.current = norm;
 
     if (mapGroupRef.current) {
-      // SVG attribute transform always scales from (0,0) — CSS matrix drifts due to bounding-box transform-origin
-      mapGroupRef.current.style.transform = '';
-      mapGroupRef.current.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${k.toFixed(4)})`);
+      // translate3d forces GPU compositing; transformOrigin 0 0 prevents bounding-box drift
+      mapGroupRef.current.removeAttribute('transform');
+      mapGroupRef.current.style.transformOrigin = '0 0';
+      mapGroupRef.current.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${k.toFixed(4)})`;
     }
 
     // Only trigger React re-render when crossing a zoom limit boundary, not on every frame
