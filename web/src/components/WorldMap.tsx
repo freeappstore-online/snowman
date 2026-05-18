@@ -443,16 +443,13 @@ const didDragRef      = useRef(false);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ position: 'absolute', inset: 0, background: '#000' }}>
+    <div className="absolute inset-0 bg-black">
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${W}`}
         preserveAspectRatio="xMidYMid slice"
-        style={{
-          width: '100%', height: '100%', display: 'block',
-          cursor: dragging ? 'grabbing' : 'grab',
-          touchAction: 'none', userSelect: 'none',
-        }}
+        className="w-full h-full block touch-none select-none"
+        style={{ cursor: dragging ? 'grabbing' : 'grab' }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
@@ -486,7 +483,7 @@ const didDragRef      = useRef(false);
                   stroke="#111"
                   strokeWidth={0.5}
                   vectorEffect="non-scaling-stroke"
-                  style={{ pointerEvents: 'none' }}
+                  className="pointer-events-none"
                 />
               )}
             </g>
@@ -521,7 +518,7 @@ const didDragRef      = useRef(false);
                     stroke="rgba(255,255,255,0.45)"
                     strokeWidth={0.6}
                     vectorEffect="non-scaling-stroke"
-                    style={{ pointerEvents: 'none' }}
+                    className="pointer-events-none"
                   />
                 );
               })}
@@ -541,7 +538,7 @@ const didDragRef      = useRef(false);
                     stroke={id === '010' ? 'none' : (isFocused ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.15)')}
                     strokeWidth={isFocused ? 2 : 0.8}
                     vectorEffect="non-scaling-stroke"
-                    style={{ pointerEvents: 'none' }}
+                    className="pointer-events-none"
                   />
                 );
               })}
@@ -552,30 +549,21 @@ const didDragRef      = useRef(false);
       </svg>
 
       {/* Zoom controls */}
-      <div style={{
-        position: 'absolute', bottom: wide || focusedCountry ? 16 : 48, right: 16,
-        display: 'flex', flexDirection: 'column',
-        background: 'rgba(15,15,15,0.88)',
-        border: '1px solid rgba(255,255,255,0.12)', borderRadius: '0.5rem',
-        overflow: 'hidden',
-      }}>
+      <div
+        className="absolute right-4 flex flex-col bg-[rgba(15,15,15,0.88)] border border-white/[0.12] rounded-lg overflow-hidden"
+        style={{ bottom: wide || focusedCountry ? 16 : 48 }}
+      >
         {[{ label: '+', f: 1.5, atLimit: k >= MAX_K }, { label: '−', f: 1 / 1.5, atLimit: k <= MIN_K }].map(({ label, f, atLimit }, i) => (
           <React.Fragment key={label}>
-            {i === 1 && <div style={{ height: 1, background: 'rgba(255,255,255,0.1)' }} />}
+            {i === 1 && <div className="h-px bg-white/10" />}
             <button
               onClick={() => {
                 const [sx, sy] = clientToSvg(window.innerWidth / 2, window.innerHeight / 2);
                 zoomAt(sx, sy, f);
               }}
               disabled={atLimit}
-              style={{
-                width: 36, height: 36,
-                background: 'none', border: 'none',
-                color: '#e4e4e7', fontSize: '1.25rem', lineHeight: 1,
-                cursor: atLimit ? 'default' : 'pointer',
-                opacity: atLimit ? 0.25 : 1,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
+              className="w-9 h-9 bg-transparent border-0 text-[#e4e4e7] text-[1.25rem] leading-none flex items-center justify-center"
+              style={{ cursor: atLimit ? 'default' : 'pointer', opacity: atLimit ? 0.25 : 1 }}
               aria-label={label === '+' ? 'Zoom in' : 'Zoom out'}
             >
               {label}
@@ -585,34 +573,29 @@ const didDragRef      = useRef(false);
       </div>
 
       {/* Legend */}
-      <aside style={{
-        position: 'absolute', bottom: wide || focusedCountry ? 16 : 48, left: 16,
-        background: 'rgba(15,15,15,0.88)',
-        border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.75rem',
-        padding: '0.5rem 0.75rem', display: 'flex', flexDirection: 'column', gap: 6,
-      }}>
+      <aside
+        className="absolute left-4 flex flex-col gap-1.5 bg-[rgba(15,15,15,0.88)] border border-white/10 rounded-xl py-2 px-3"
+        style={{ bottom: wide || focusedCountry ? 16 : 48 }}
+      >
         {[{ color: '#2a2a2e', label: 'No snow' }, { color: '#4ade80', label: 'Snow' }].map(({ color, label }) => (
-          <span key={label} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: '#a1a1aa' }}>
-            <span style={{ width: 10, height: 10, borderRadius: 2, background: color, flexShrink: 0 }} />
+          <span key={label} className="flex items-center gap-2 text-xs text-[#a1a1aa]">
+            <span className="w-[10px] h-[10px] rounded-[2px] shrink-0" style={{ background: color }} />
             {label}
           </span>
         ))}
       </aside>
 
       {(!countries || stateLoading) && !mapError && (
-        <div style={{
-          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(0,0,0,0.55)', pointerEvents: 'none',
-        }}>
-          <span style={{ color: '#a1a1aa', fontSize: '0.875rem' }}>
+        <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,0.55)] pointer-events-none">
+          <span className="text-[#a1a1aa] text-sm">
             {!countries ? 'Loading map…' : 'Fetching snow data…'}
           </span>
         </div>
       )}
 
       {mapError && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ color: '#f87171' }}>Failed to load map</span>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[#f87171]">Failed to load map</span>
         </div>
       )}
     </div>

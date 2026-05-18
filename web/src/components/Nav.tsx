@@ -17,10 +17,10 @@ export function Nav() {
   const location = useLocation();
 
   return (
-    <header className="border-b" style={{ borderColor: "var(--line)", padding: "0.75rem 0" }}>
+    <header className="border-b border-[var(--line)] py-3">
       <div className="container flex items-center justify-between">
-        <Link to="/" className="text-xl font-extrabold tracking-tight no-underline" style={{ color: "var(--ink)" }}>
-          Free <span style={{ color: "var(--accent)" }}>Apps</span>
+        <Link to="/" className="text-xl font-extrabold tracking-tight no-underline text-[var(--ink)]">
+          Free <span className="text-[var(--accent)]">Apps</span>
         </Link>
 
         {/* Desktop nav */}
@@ -30,8 +30,7 @@ export function Nav() {
               <a
                 key={link.to}
                 href={link.to}
-                className={`text-sm font-semibold no-underline ${link.className || ""}`}
-                style={{ color: link.className === "pro-link" ? "var(--pro)" : "var(--muted)" }}
+                className={`text-sm font-semibold no-underline ${link.className === 'pro-link' ? 'text-[var(--pro)]' : 'text-[var(--muted)]'} ${link.className || ''}`}
               >
                 {link.label}
               </a>
@@ -39,8 +38,7 @@ export function Nav() {
               <Link
                 key={link.to}
                 to={link.to}
-                className="text-sm font-semibold no-underline"
-                style={{ color: location.pathname === link.to ? "var(--ink)" : "var(--muted)" }}
+                className={`text-sm font-semibold no-underline ${location.pathname === link.to ? 'text-[var(--ink)]' : 'text-[var(--muted)]'}`}
               >
                 {link.label}
               </Link>
@@ -51,15 +49,13 @@ export function Nav() {
               <img
                 src={user.photo_url || ""}
                 alt={user.name}
-                className="rounded-full border-2"
-                style={{ width: 28, height: 28, borderColor: "var(--line)" }}
+                className="w-7 h-7 rounded-full border-2 border-[var(--line)]"
               />
             </Link>
           ) : (
             <button
               onClick={signIn}
-              className="text-sm font-semibold"
-              style={{ color: "var(--accent)", background: "none", border: "none", cursor: "pointer" }}
+              className="text-sm font-semibold text-[var(--accent)] bg-transparent border-0 cursor-pointer"
             >
               Sign in
             </button>
@@ -68,9 +64,8 @@ export function Nav() {
 
         {/* Mobile hamburger */}
         <button
-          className="sm:hidden"
+          className="sm:hidden bg-transparent border-0 text-[1.2rem] text-[var(--ink)] cursor-pointer"
           onClick={() => setMenuOpen(true)}
-          style={{ background: "none", border: "none", fontSize: "1.2rem", color: "var(--ink)", cursor: "pointer" }}
           aria-label="Menu"
         >
           &#9776;
@@ -81,24 +76,15 @@ export function Nav() {
       {menuOpen && (
         <>
           <div
-            className="fixed inset-0 z-40"
-            style={{ background: "rgba(0,0,0,0.3)" }}
+            className="fixed inset-0 z-40 bg-black/30"
             onClick={() => setMenuOpen(false)}
           />
           <nav
-            className="fixed top-0 right-0 z-50 flex flex-col gap-1 p-4"
-            style={{
-              width: 220,
-              height: "100dvh",
-              background: "var(--surface)",
-              borderLeft: "1px solid var(--line)",
-              boxShadow: "-4px 0 20px rgba(0,0,0,0.1)",
-            }}
+            className="fixed top-0 right-0 z-50 flex flex-col gap-1 p-4 w-[220px] h-[100dvh] bg-[var(--surface)] border-l border-[var(--line)] shadow-[−4px_0_20px_rgba(0,0,0,0.1)]"
           >
             <button
               onClick={() => setMenuOpen(false)}
-              className="self-end mb-2"
-              style={{ background: "none", border: "none", color: "var(--muted)", fontSize: "1rem", cursor: "pointer" }}
+              className="self-end mb-2 bg-transparent border-0 text-[var(--muted)] text-base cursor-pointer"
             >
               &#10005;
             </button>
@@ -107,8 +93,7 @@ export function Nav() {
                 <a
                   key={link.to}
                   href={link.to}
-                  className="block py-2 text-base font-semibold no-underline"
-                  style={{ color: link.className === "pro-link" ? "var(--pro)" : "var(--muted)" }}
+                  className={`block py-2 text-base font-semibold no-underline ${link.className === 'pro-link' ? 'text-[var(--pro)]' : 'text-[var(--muted)]'}`}
                   onClick={() => setMenuOpen(false)}
                 >
                   {link.label}
@@ -117,8 +102,7 @@ export function Nav() {
                 <Link
                   key={link.to}
                   to={link.to}
-                  className="block py-2 text-base font-semibold no-underline"
-                  style={{ color: location.pathname === link.to ? "var(--ink)" : "var(--muted)" }}
+                  className={`block py-2 text-base font-semibold no-underline ${location.pathname === link.to ? 'text-[var(--ink)]' : 'text-[var(--muted)]'}`}
                   onClick={() => setMenuOpen(false)}
                 >
                   {link.label}
@@ -127,19 +111,13 @@ export function Nav() {
             )}
             {user ? (
               <Link to="/profile" className="flex items-center gap-2 mt-4" onClick={() => setMenuOpen(false)}>
-                <img
-                  src={user.photo_url || ""}
-                  alt={user.name}
-                  className="rounded-full"
-                  style={{ width: 24, height: 24 }}
-                />
-                <span className="text-sm font-semibold" style={{ color: "var(--ink)" }}>{user.name}</span>
+                <img src={user.photo_url || ""} alt={user.name} className="w-6 h-6 rounded-full" />
+                <span className="text-sm font-semibold text-[var(--ink)]">{user.name}</span>
               </Link>
             ) : (
               <button
                 onClick={() => { setMenuOpen(false); signIn(); }}
-                className="mt-4 text-sm font-semibold"
-                style={{ color: "var(--accent)", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}
+                className="mt-4 text-sm font-semibold text-[var(--accent)] bg-transparent border-0 cursor-pointer text-left"
               >
                 Sign in
               </button>

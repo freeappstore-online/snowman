@@ -60,25 +60,14 @@ export default function App() {
 
       {/* Focused country island — bottom center (desktop) / below nav (mobile) */}
       {focusedCountry && (
-        <div style={{
-          position: 'absolute',
-          ...(wide
-            ? { bottom: 16, top: 'auto' }
-            : { top: 12, bottom: 'auto' }),
-          left: '50%', transform: 'translateX(-50%)', zIndex: 200,
-          background: 'rgba(10,10,10,0.88)', border: '1px solid rgba(255,255,255,0.10)',
-          borderRadius: '1.25rem', padding: '0.35rem 0.5rem 0.35rem 1rem',
-          display: 'flex', alignItems: 'center', gap: '0.75rem',
-          fontSize: '0.8rem', color: '#d4d4d8', whiteSpace: 'nowrap',
-        }}>
-          <span><span style={{ color: '#6b7280' }}>Viewing:</span> {focusedCountry.name}</span>
+        <div
+          className="absolute left-1/2 -translate-x-1/2 z-[200] bg-[rgba(10,10,10,0.88)] border border-white/10 rounded-[1.25rem] pl-4 pr-2 py-[0.35rem] flex items-center gap-3 text-[0.8rem] text-[#d4d4d8] whitespace-nowrap"
+          style={wide ? { bottom: 16 } : { top: 12 }}
+        >
+          <span><span className="text-[#9ca3af]">Viewing:</span> {focusedCountry.name}</span>
           <button
             onClick={() => setFocusedCountry(null)}
-            style={{
-              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: '0.65rem', color: '#f5f5f5', fontSize: '0.75rem', fontWeight: 600,
-              cursor: 'pointer', padding: '0.2rem 0.65rem',
-            }}
+            className="bg-white/[0.08] border border-white/[0.12] rounded-[0.65rem] text-[#f5f5f5] text-[0.75rem] font-semibold cursor-pointer py-[0.2rem] px-[0.65rem]"
           >
             Done
           </button>
@@ -87,18 +76,14 @@ export default function App() {
 
       {/* Attribution — bottom center */}
       {!focusedCountry && (
-        <div style={{
-          position: 'absolute', bottom: 16,
-          left: '50%', transform: 'translateX(-50%)', zIndex: 100,
-          fontSize: '0.65rem', color: '#6b7280', textAlign: 'center', whiteSpace: 'nowrap',
-        }}>
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[100] text-[0.65rem] text-[#9ca3af] text-center whitespace-nowrap">
           {error
-            ? <span style={{ color: '#ef4444' }}>Snow data unavailable</span>
+            ? <span className="text-[#ef4444]">Snow data unavailable</span>
             : lastUpdated
               ? <>Updated {relativeTime(lastUpdated, now)}</>
               : loading ? 'Fetching snow data…' : null
           }
-          {!error && <div style={{ marginTop: 2 }}>World map can make mistakes, check country's snow via searching</div>}
+          {!error && <div className="mt-[2px]">World map can make mistakes, check country's snow via searching</div>}
         </div>
       )}
     </Shell>

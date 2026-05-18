@@ -10,24 +10,8 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-
-const glass: React.CSSProperties = {
-  background: 'rgba(10,10,10,0.88)',
-  border: '1px solid rgba(255,255,255,0.10)',
-};
-
-const navBtn: React.CSSProperties = {
-  background: 'none', border: 'none',
-  color: '#9ca3af', fontSize: '0.8rem', fontWeight: 600,
-  cursor: 'pointer', padding: '0 0.5rem', whiteSpace: 'nowrap',
-};
-
-const inputStyle: React.CSSProperties = {
-  background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.12)',
-  borderRadius: '0.65rem', outline: 'none',
-  color: '#f5f5f5', fontSize: '0.78rem',
-  padding: '0.3rem 0.7rem', boxSizing: 'border-box',
-};
+const glass = 'bg-[rgba(10,10,10,0.88)] border border-white/10';
+const inputCls = 'w-full bg-transparent border-0 outline-none text-[#f5f5f5] text-[0.78rem] py-[0.3rem] px-[0.7rem] relative z-[1]';
 
 interface Props {
   panTo: (lat: number, lon: number, zoom?: number) => void;
@@ -66,7 +50,6 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
 
   useEffect(() => { setNearMeActiveIndex(-1); }, [nearMeQuery]);
 
-  // Fetch country from IP on mount
   useEffect(() => {
     fetch('https://get.geojs.io/v1/ip/country.json')
       .then(r => r.ok ? r.json() : null)
@@ -112,19 +95,9 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
 
   useEffect(() => {
     if (!showNearMe && !showAbout) return;
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (navHeaderRef.current?.contains(t)) return;
-      if (showNearMe && !nearMePanelRef.current?.contains(t)) setShowNearMe(false);
-      if (showAbout && !aboutPanelRef.current?.contains(t)) setShowAbout(false);
-    };
     const onWheel = () => { setShowNearMe(false); setShowAbout(false); };
-    window.addEventListener('pointerdown', onDown);
     window.addEventListener('wheel', onWheel, { passive: true });
-    return () => {
-      window.removeEventListener('pointerdown', onDown);
-      window.removeEventListener('wheel', onWheel);
-    };
+    return () => window.removeEventListener('wheel', onWheel);
   }, [showNearMe, showAbout]);
 
   function saveToHistory(id: string) {
@@ -142,9 +115,6 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
 
     setNearMeSearching(true);
     try {
-      // Use min(centroid, sample point) distance — handles both small countries where
-      // sample points are far-north outliers, and large countries (Russia, Canada) where
-      // the centroid is deep inland but the closest territory is near the origin
       const sorted = SAMPLE_POINTS
         .map(([id, lat, lon]) => {
           const centroid = COUNTRY_BY_ID.get(id);
@@ -155,7 +125,6 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
         })
         .sort((a, b) => a.dist - b.dist);
 
-      // Single batch request — all points fit within Open-Meteo's 100-location limit
       const lats = sorted.map(p => p.lat.toFixed(4)).join(',');
       const lons = sorted.map(p => p.lon.toFixed(4)).join(',');
       const r = await fetch(
@@ -165,24 +134,20 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
       const data = await r.json();
       const results: unknown[] = Array.isArray(data) ? data : [data];
 
-      // Check ALL sample points for origin country first — some countries (Bolivia, Russia, Argentina,
-      // Chile) have multiple sample points; findIndex only returns the first, which may not have snow.
       const hasOriginSnow = sorted.some((p, i) =>
         p.id === origin.id &&
         ((results[i] as { current?: { snow_depth?: number } })?.current?.snow_depth ?? 0) > 0
       );
       if (hasOriginSnow) { selectCountry(origin); setShowNearMe(false); return; }
 
-      // Walk sorted order — first hit is geographically closest snowy country
       for (let i = 0; i < sorted.length; i++) {
-        if (sorted[i]?.id === origin.id) continue; // already checked above
+        if (sorted[i]?.id === origin.id) continue;
         const depth = (results[i] as { current?: { snow_depth?: number } })?.current?.snow_depth ?? 0;
         if (depth > 0) {
           const country = COUNTRY_BY_ID.get(sorted[i]?.id ?? '');
           if (country) { selectCountry(country); setShowNearMe(false); return; }
         }
       }
-      // No snow found globally — stay put (could add a toast here)
     } catch {
       // Network error — silently ignore
     } finally {
@@ -223,26 +188,21 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
     const suffix = activeItem && activeItem.name.toLowerCase().startsWith(query.toLowerCase())
       ? activeItem.name.slice(query.length) : '';
     return (
-      <div style={{
-        position: 'relative', width: fullWidth ? '100%' : 185,
-        background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.12)',
-        borderRadius: '0.65rem',
-      }}>
+      <div
+        className="relative bg-[#1c1c1e] border border-white/[0.12] rounded-[0.65rem]"
+        style={{ width: fullWidth ? '100%' : 185 }}
+      >
         {suffix && (
-          <div aria-hidden style={{
-            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-            padding: '0.3rem 0.7rem', boxSizing: 'border-box',
-            fontSize: '0.78rem', fontFamily: 'inherit',
-            display: 'flex', alignItems: 'center',
-            pointerEvents: 'none', overflow: 'hidden', whiteSpace: 'pre',
-          }}>
-            <span style={{ color: 'transparent' }}>{query}</span>
-            <span style={{ color: 'rgba(245,245,245,0.5)' }}>{suffix}</span>
+          <div aria-hidden className="absolute inset-0 px-[0.7rem] text-[0.78rem] flex items-center pointer-events-none overflow-hidden whitespace-pre">
+            <span className="text-transparent">{query}</span>
+            <span className="text-white/50">{suffix}</span>
           </div>
         )}
         <input
           ref={autoFocus ? undefined : inputRef}
           autoFocus={autoFocus}
+          name="country-search"
+          autoComplete="off"
           value={query}
           onChange={e => setQuery(e.target.value)}
           onFocus={() => { setShowAbout(false); setShowNearMe(false); setSearchFocused(true); }}
@@ -253,7 +213,7 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
             else if (e.key === 'Enter') { e.preventDefault(); const c = flatItems[activeIndex]; if (c) selectCountry(c); }
           }}
           placeholder={suffix ? '' : 'Search countries…'}
-          style={{ ...inputStyle, width: '100%', background: 'transparent', border: 'none', borderRadius: 0, position: 'relative', zIndex: 1 }}
+          className={inputCls}
         />
       </div>
     );
@@ -265,15 +225,15 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
   }
 
   const sectionLabel = (text: string, showClear = false) => (
-    <div style={{ padding: '0.35rem 0.85rem 0.2rem', fontSize: '0.67rem', fontWeight: 700, color: '#71717a', letterSpacing: '0.06em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div className="px-[0.85rem] pt-[0.35rem] pb-[0.2rem] text-[0.67rem] font-bold text-[#9ca3af] tracking-[0.06em] uppercase flex items-center justify-between">
       <span>{text}</span>
       {showClear && (
         <button
           onMouseDown={e => e.preventDefault()}
           onClick={clearHistory}
           onMouseEnter={e => (e.currentTarget.style.color = '#d4d4d8')}
-          onMouseLeave={e => (e.currentTarget.style.color = '#71717a')}
-          style={{ background: 'none', border: 'none', color: '#71717a', fontSize: '0.67rem', fontWeight: 600, cursor: 'pointer', padding: 0, textTransform: 'uppercase', letterSpacing: '0.06em', transition: 'color 0.15s' }}
+          onMouseLeave={e => (e.currentTarget.style.color = '#9ca3af')}
+          className="bg-transparent border-0 text-[#9ca3af] text-[0.67rem] font-semibold cursor-pointer p-0 uppercase tracking-[0.06em] transition-colors duration-150"
         >
           Clear
         </button>
@@ -287,17 +247,10 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
       onClick={() => selectCountry(c)}
       onMouseEnter={() => setActiveIndex(flatIdx)}
       onMouseLeave={() => setActiveIndex(-1)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: '0.5rem',
-        width: '100%', padding: '0.42rem 0.85rem',
-        background: flatIdx === activeIndex ? 'rgba(255,255,255,0.08)' : 'none',
-        border: 'none',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
-        color: '#d4d4d8', fontSize: '0.8rem',
-        cursor: 'pointer', textAlign: 'left',
-      }}
+      className="flex items-center gap-2 w-full px-[0.85rem] py-[0.42rem] border-0 border-t border-white/[0.06] text-[#d4d4d8] text-[0.8rem] cursor-pointer text-left"
+      style={{ background: flatIdx === activeIndex ? 'rgba(255,255,255,0.08)' : 'transparent' }}
     >
-      <span style={{ color: snowSet.has(c.id) ? '#4ade80' : '#52525b', fontSize: '0.55rem' }}>●</span>
+      <span className="text-[0.55rem]" style={{ color: snowSet.has(c.id) ? '#4ade80' : '#71717a' }}>●</span>
       {c.name}
     </button>
   );
@@ -315,11 +268,7 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
   const nearMeDropdownEl = nearMeSuggestions.length > 0 && !nearMePicked ? (
     <div
       onMouseDown={e => e.preventDefault()}
-      style={{
-        ...glass, borderRadius: '0.85rem',
-        position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
-        zIndex: 300, overflow: 'hidden', maxHeight: 'calc(100dvh - 160px)', overflowY: 'auto',
-      }}
+      className={`${glass} rounded-[0.85rem] absolute top-[calc(100%+6px)] left-0 right-0 z-[300] overflow-hidden max-h-[calc(100dvh-160px)] overflow-y-auto`}
     >
       {nearMeSuggestions.map((c, i) => (
         <button
@@ -327,12 +276,10 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
           onClick={() => { setNearMeQuery(c.name); setNearMeActiveIndex(-1); setNearMePicked(true); }}
           onMouseEnter={() => setNearMeActiveIndex(i)}
           onMouseLeave={() => setNearMeActiveIndex(-1)}
+          className="block w-full text-left px-[0.85rem] py-[0.42rem] border-0 text-[#d4d4d8] text-[0.8rem] cursor-pointer"
           style={{
-            display: 'block', width: '100%', textAlign: 'left',
-            padding: '0.42rem 0.85rem',
-            background: i === nearMeActiveIndex ? 'rgba(255,255,255,0.08)' : 'none',
-            border: 'none', borderTop: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.06)',
-            color: '#d4d4d8', fontSize: '0.8rem', cursor: 'pointer',
+            background: i === nearMeActiveIndex ? 'rgba(255,255,255,0.08)' : 'transparent',
+            borderTop: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.06)',
           }}
         >
           {c.name}
@@ -343,51 +290,51 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
 
   if (!wide && focusedCountry) return null;
 
+  const panelPos = navRect
+    ? { left: navRect.left, width: navRect.width }
+    : { left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 340px)' };
+
   return (
     <>
       {/* Main navbar pill */}
-      <header ref={navHeaderRef} style={{
-        ...glass,
-        position: 'absolute', top: 12, zIndex: 200,
-        borderRadius: '1.25rem',
-        height: 44,
-        display: 'flex', alignItems: 'center', gap: '0.2rem',
-        ...(wide ? {
-          left: '50%', transform: 'translateX(-50%)',
-          width: 'max-content', maxWidth: '92vw',
-          padding: '0 0.75rem 0 0.875rem',
-        } : {
-          left: 8, right: 8,
-          padding: '0 0.875rem',
-        }),
-      }}>
+      <header
+        ref={navHeaderRef}
+        className={`${glass} absolute top-3 z-[200] rounded-[1.25rem] h-11 flex items-center gap-1`}
+        style={wide
+          ? { left: '50%', transform: 'translateX(-50%)', width: 'max-content', maxWidth: '92vw', padding: '0 0.75rem 0 0.875rem' }
+          : { left: 8, right: 8, padding: '0 0.875rem' }
+        }
+      >
         {/* Brand */}
-        <span style={{
-          fontFamily: 'Fraunces, "Times New Roman", Georgia, serif',
-          fontWeight: 800, fontSize: '1rem',
-          letterSpacing: '-0.01em', flexShrink: 0, paddingRight: '0.4rem',
-          background: 'linear-gradient(to bottom, #87ceeb, #ffffff)',
-          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text',
-        }}>
+        <span
+          className="font-extrabold text-[1rem] tracking-[-0.01em] shrink-0 pr-[0.4rem]"
+          style={{ fontFamily: 'Fraunces, serif', background: 'linear-gradient(to bottom, #87ceeb, #ffffff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}
+        >
           Snowman
         </span>
 
-        <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.12)', flexShrink: 0 }} />
+        <div className="w-px h-5 bg-white/[0.12] shrink-0" />
 
-        {/* Nav links */}
-        <button style={{ ...navBtn, color: showNearMe ? '#f5f5f5' : '#9ca3af' }} onClick={() => { setShowNearMe(v => !v); setShowAbout(false); setQuery(''); setSearchOpen(false); }}>
+        <button
+          className="bg-transparent border-0 text-[0.8rem] font-semibold cursor-pointer px-2 whitespace-nowrap"
+          style={{ color: showNearMe ? '#f5f5f5' : '#9ca3af' }}
+          onClick={() => { setShowNearMe(v => !v); setShowAbout(false); setQuery(''); setSearchOpen(false); }}
+        >
           Snow Near Me
         </button>
-        <button style={{ ...navBtn, color: showAbout ? '#f5f5f5' : '#9ca3af' }} onClick={() => { setShowAbout(v => !v); setShowNearMe(false); setQuery(''); setSearchOpen(false); }}>
+        <button
+          className="bg-transparent border-0 text-[0.8rem] font-semibold cursor-pointer px-2 whitespace-nowrap"
+          style={{ color: showAbout ? '#f5f5f5' : '#9ca3af' }}
+          onClick={() => { setShowAbout(v => !v); setShowNearMe(false); setQuery(''); setSearchOpen(false); }}
+        >
           About
         </button>
 
-        {/* Search */}
-        <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '0.5rem', marginLeft: 'auto' }}>
+        <div className="flex items-center pl-2 ml-auto">
           <button
             onClick={() => { setSearchOpen(v => !v); setShowAbout(false); setShowNearMe(false); }}
-            style={{ ...navBtn, padding: '0 0.1rem', display: 'flex', alignItems: 'center', color: searchOpen ? '#f5f5f5' : '#9ca3af' }}
+            className="bg-transparent border-0 px-[0.1rem] flex items-center cursor-pointer"
+            style={{ color: searchOpen ? '#f5f5f5' : '#9ca3af' }}
             aria-label={searchOpen ? 'Close search' : 'Search countries'}
           >
             {searchOpen ? (
@@ -408,24 +355,15 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
       {/* Wide search panel */}
       {wide && searchOpen && (
         <>
-          <div style={{ position: 'fixed', inset: 0, zIndex: 198 }} onClick={() => setSearchOpen(false)} />
-          <div style={{
-            ...glass, borderRadius: '1rem',
-            position: 'absolute', top: 64, zIndex: 199,
-            ...(navRect
-              ? { left: navRect.left, width: navRect.width }
-              : { left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 340px)' }),
-            padding: '0.5rem',
-          }}>
-            <div style={{ position: 'relative' }}>
+          <div className="fixed inset-0 z-[198]" onClick={() => setSearchOpen(false)} />
+          <div className={`${glass} rounded-[1rem] absolute top-16 z-[199] p-2`} style={panelPos}>
+            <div className="relative">
               {searchInput(true, true)}
               {dropdownSections.length > 0 && (
-                <div onMouseDown={e => e.preventDefault()} style={{
-                  ...glass, borderRadius: '0.85rem',
-                  position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0,
-                  zIndex: 300, overflow: 'hidden',
-                  maxHeight: 'calc(100dvh - 140px)', overflowY: 'auto',
-                }}>
+                <div
+                  onMouseDown={e => e.preventDefault()}
+                  className={`${glass} rounded-[0.85rem] absolute top-[calc(100%+8px)] left-0 right-0 z-[300] overflow-hidden max-h-[calc(100dvh-140px)] overflow-y-auto`}
+                >
                   {renderSections()}
                 </div>
               )}
@@ -434,151 +372,104 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
         </>
       )}
 
-      {/* Narrow search overlay */}
+      {/* Narrow search overlay + panel */}
       {!wide && searchOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 198 }} onClick={() => setSearchOpen(false)} />
+        <div className="fixed inset-0 z-[198]" onClick={() => setSearchOpen(false)} />
       )}
       {!wide && searchOpen && (
-        <div style={{
-          ...glass,
-          position: 'absolute', top: 64, left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(96vw, 420px)', zIndex: 199,
-          borderRadius: '1rem',
-          maxHeight: 'calc(100dvh - 80px)',
-          display: 'flex', flexDirection: 'column',
-        }}>
-          <div style={{ padding: '0.5rem 0.5rem 0.35rem', flexShrink: 0 }}>
-            {searchInput(true, true)}
-          </div>
-          <div style={{ overflowY: 'auto' }}>
-            {renderSections()}
-          </div>
+        <div className={`${glass} absolute top-16 left-1/2 -translate-x-1/2 w-[min(96vw,420px)] z-[199] rounded-[1rem] max-h-[calc(100dvh-80px)] flex flex-col`}>
+          <div className="p-2 pb-[0.35rem] shrink-0">{searchInput(true, true)}</div>
+          <div className="overflow-y-auto">{renderSections()}</div>
         </div>
       )}
 
       {/* Snow Near Me panel */}
+      {showNearMe && <div className="fixed inset-0 z-[198]" onMouseDown={() => setShowNearMe(false)} />}
       {showNearMe && (
-        <>
-          <div ref={nearMePanelRef} style={{
-            ...glass, borderRadius: '1rem',
-            position: 'absolute', top: 64, zIndex: 199,
-            padding: '0.5rem 0.5rem 0.35rem',
-            ...(navRect
-              ? { left: navRect.left, width: navRect.width }
-              : { left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 340px)' }),
-          }}>
-            {/* Input row */}
-            <div style={{ display: 'flex', gap: '0.4rem', ...(!wide && { position: 'relative' }) }}>
-              {/* Wrap input — on wide, dropdown anchors to input width; on mobile, anchors to outer row */}
-              <div style={{
-                position: 'relative', flex: 1,
-                background: '#1c1c1e', border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: '0.65rem',
-              }}>
-                {/* Ghost completion text */}
-                {(() => {
-                  const s = nearMeSuggestions[nearMeActiveIndex >= 0 ? nearMeActiveIndex : 0];
-                  const suffix = (!nearMePicked && s) ? s.name.slice(nearMeQuery.length) : '';
-                  return suffix ? (
-                    <div aria-hidden style={{
-                      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                      padding: '0.3rem 0.7rem', boxSizing: 'border-box',
-                      fontSize: '0.78rem', fontFamily: 'inherit',
-                      display: 'flex', alignItems: 'center',
-                      pointerEvents: 'none', overflow: 'hidden', whiteSpace: 'pre',
-                    }}>
-                      <span style={{ color: 'transparent' }}>{nearMeQuery}</span>
-                      <span style={{ color: 'rgba(245,245,245,0.5)' }}>{suffix}</span>
-                    </div>
-                  ) : null;
-                })()}
-                <input
-                  autoFocus
-                  value={nearMeQuery}
-                  onChange={e => { setNearMeQuery(e.target.value); setNearMePicked(false); }}
-                  onKeyDown={e => {
-                    if (e.key === 'ArrowDown') { e.preventDefault(); setNearMeActiveIndex(i => Math.min(i + 1, nearMeSuggestions.length - 1)); }
-                    else if (e.key === 'ArrowUp') { e.preventDefault(); setNearMeActiveIndex(i => Math.max(i - 1, -1)); }
-                    else if (e.key === 'Enter') { e.preventDefault(); handleGoNearMe(); }
-                  }}
-                  placeholder='Enter your country…'
-                  style={{ ...inputStyle, width: '100%', background: 'transparent', border: 'none', borderRadius: 0, position: 'relative', zIndex: 1 }}
-                />
-                {wide && nearMeDropdownEl}
-              </div>
-
-              <button
-                onClick={handleGoNearMe}
-                disabled={!nearMeQuery.trim() || nearMeSuggestions.length === 0 || nearMeSearching}
-                style={{
-                  background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)',
-                  borderRadius: '0.65rem', color: '#f5f5f5',
-                  cursor: nearMeQuery.trim() && nearMeSuggestions.length > 0 && !nearMeSearching ? 'pointer' : 'default',
-                  opacity: nearMeQuery.trim() && nearMeSuggestions.length > 0 && !nearMeSearching ? 1 : 0.4,
-                  padding: '0.3rem 0.75rem', display: 'flex', alignItems: 'center',
+        <div ref={nearMePanelRef} className={`${glass} rounded-[1rem] absolute top-16 z-[199] p-2 pb-[0.35rem]`} style={panelPos}>
+          <div className={`flex gap-[0.4rem] ${!wide ? 'relative' : ''}`}>
+            <div className="relative flex-1 bg-[#1c1c1e] border border-white/[0.12] rounded-[0.65rem]">
+              {(() => {
+                const s = nearMeSuggestions[nearMeActiveIndex >= 0 ? nearMeActiveIndex : 0];
+                const suffix = (!nearMePicked && s) ? s.name.slice(nearMeQuery.length) : '';
+                return suffix ? (
+                  <div aria-hidden className="absolute inset-0 px-[0.7rem] text-[0.78rem] flex items-center pointer-events-none overflow-hidden whitespace-pre">
+                    <span className="text-transparent">{nearMeQuery}</span>
+                    <span className="text-white/50">{suffix}</span>
+                  </div>
+                ) : null;
+              })()}
+              <input
+                autoFocus
+                name="near-me-country"
+                autoComplete="off"
+                value={nearMeQuery}
+                onChange={e => { setNearMeQuery(e.target.value); setNearMePicked(false); }}
+                onKeyDown={e => {
+                  if (e.key === 'ArrowDown') { e.preventDefault(); setNearMeActiveIndex(i => Math.min(i + 1, nearMeSuggestions.length - 1)); }
+                  else if (e.key === 'ArrowUp') { e.preventDefault(); setNearMeActiveIndex(i => Math.max(i - 1, -1)); }
+                  else if (e.key === 'Enter') { e.preventDefault(); handleGoNearMe(); }
                 }}
-              >
-                {nearMeSearching ? (
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                    <circle cx="7" cy="7" r="5" strokeDasharray="20" strokeDashoffset="10" style={{ transformOrigin: '7px 7px', animation: 'spin 0.8s linear infinite' }} />
-                  </svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="2" y1="7" x2="12" y2="7" />
-                    <polyline points="8,3 12,7 8,11" />
-                  </svg>
-                )}
-              </button>
-              {!wide && nearMeDropdownEl}
+                placeholder="Enter your country…"
+                className={inputCls}
+              />
+              {wide && nearMeDropdownEl}
             </div>
 
-            {/* Disclaimer / validation */}
-            {nearMeQuery.trim() !== '' && nearMeSuggestions.length === 0 ? (
-              <p style={{ fontSize: '0.7rem', color: '#ef4444', margin: '0.3rem 0.2rem 0', lineHeight: 1.4 }}>
-                Country not found
-              </p>
-            ) : (
-              <p style={{ fontSize: '0.7rem', color: '#6b7280', margin: '0.3rem 0.2rem 0', lineHeight: 1.4 }}>
-                Pre-filled country is based on your IP address
-              </p>
-            )}
+            <button
+              onClick={handleGoNearMe}
+              disabled={!nearMeQuery.trim() || nearMeSuggestions.length === 0 || nearMeSearching}
+              className="bg-white/10 border border-white/[0.15] rounded-[0.65rem] text-[#f5f5f5] flex items-center px-3 py-[0.3rem] transition-opacity"
+              style={{
+                cursor: nearMeQuery.trim() && nearMeSuggestions.length > 0 && !nearMeSearching ? 'pointer' : 'default',
+                opacity: nearMeQuery.trim() && nearMeSuggestions.length > 0 && !nearMeSearching ? 1 : 0.4,
+              }}
+            >
+              {nearMeSearching ? (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <circle cx="7" cy="7" r="5" strokeDasharray="20" strokeDashoffset="10" style={{ transformOrigin: '7px 7px', animation: 'spin 0.8s linear infinite' }} />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="2" y1="7" x2="12" y2="7" />
+                  <polyline points="8,3 12,7 8,11" />
+                </svg>
+              )}
+            </button>
+            {!wide && nearMeDropdownEl}
           </div>
-        </>
+
+          {nearMeQuery.trim() !== '' && nearMeSuggestions.length === 0 ? (
+            <p className="text-[0.7rem] text-[#ef4444] mt-[0.3rem] mx-[0.2rem] mb-0 leading-[1.4]">Country not found</p>
+          ) : (
+            <p className="text-[0.7rem] text-[#9ca3af] mt-[0.3rem] mx-[0.2rem] mb-0 leading-[1.4]">Pre-filled country is based on your IP address</p>
+          )}
+        </div>
       )}
 
       {/* About panel */}
+      {showAbout && <div className="fixed inset-0 z-[198]" onMouseDown={() => setShowAbout(false)} />}
       {showAbout && (
-        <>
-          <div ref={aboutPanelRef} style={{
-            ...glass, borderRadius: '1rem',
-            position: 'absolute', top: 64, zIndex: 199,
-            padding: '1.1rem 1.25rem',
-            maxHeight: 'calc(100dvh - 80px)', overflowY: 'auto',
-            ...(navRect
-              ? { left: navRect.left, width: navRect.width }
-              : { left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 340px)' }),
-          }}>
-            <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.1rem', fontWeight: 800, color: '#f5f5f5', margin: '0 0 0.5rem' }}>
-              Snowman
-            </h2>
-            <p style={{ fontSize: '0.8rem', color: '#9ca3af', lineHeight: 1.55, margin: '0 0 0.75rem' }}>
-              See where it's snowing right now across 190+ countries, updated hourly.
-              Pan and zoom the map, or search for a country above.
-            </p>
-            <p style={{ fontSize: '0.75rem', color: '#6b7280', lineHeight: 1.5, margin: '0 0 0.4rem' }}>
-              Snow data reflects general regional depths. Isolated high-altitude peaks may vary.
-            </p>
-            <p style={{ fontSize: '0.75rem', color: '#6b7280', lineHeight: 1.5, margin: '0 0 0.4rem' }}>
-              Snow depth: <a href="https://open-meteo.com" style={{ color: '#6b7280' }}>Open-Meteo</a>
-              {' · '}Map: <a href="https://github.com/topojson/world-atlas" style={{ color: '#6b7280' }}>Natural Earth</a>
-            </p>
-            <p style={{ fontSize: '0.75rem', color: '#6b7280', margin: 0 }}>
-              Proudly a member of{' '}
-              <a href="https://freeappstore.online" style={{ color: '#60a5fa' }}>FreeAppStore</a>
-            </p>
-          </div>
-        </>
+        <div ref={aboutPanelRef} className={`${glass} rounded-[1rem] absolute top-16 z-[199] p-[1.1rem] px-[1.25rem] max-h-[calc(100dvh-80px)] overflow-y-auto`} style={panelPos}>
+          <h2 className="text-[1.1rem] font-extrabold text-[#f5f5f5] mt-0 mb-2" style={{ fontFamily: 'Fraunces, serif' }}>
+            Snowman
+          </h2>
+          <p className="text-[0.8rem] text-[#d4d4d8] leading-[1.55] mt-0 mb-3">
+            See where it's snowing right now across 190+ countries, updated hourly.
+            Pan and zoom the map, or search for a country above.
+          </p>
+          <p className="text-[0.75rem] text-[#a1a1aa] leading-[1.5] mt-0 mb-[0.4rem]">
+            Snow data reflects general regional depths. Isolated high-altitude peaks may vary.
+          </p>
+          <p className="text-[0.75rem] text-[#a1a1aa] leading-[1.5] mt-0 mb-[0.4rem]">
+            Snow depth: <a href="https://open-meteo.com" className="text-[#a1a1aa]">Open-Meteo</a>
+            {' · '}Map: <a href="https://github.com/topojson/world-atlas" className="text-[#a1a1aa]">Natural Earth</a>
+          </p>
+          <p className="text-[0.75rem] text-[#a1a1aa] m-0">
+            Proudly a member of{' '}
+            <a href="https://freeappstore.online" className="text-[#60a5fa]">FreeAppStore</a>
+          </p>
+        </div>
       )}
     </>
   );
