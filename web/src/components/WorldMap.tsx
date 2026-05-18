@@ -170,6 +170,7 @@ const didDragRef      = useRef(false);
   const statesLoadedRef = useRef(false);
   const mapGroupRef     = useRef<SVGGElement>(null);
   const syncTimerRef    = useRef<number | null>(null);
+  const ctmRef          = useRef<{ a: number; e: number; f: number } | null>(null);
 
   // ── Resize ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -229,9 +230,16 @@ const didDragRef      = useRef(false);
     const prevK = transformRef.current.k;
     transformRef.current = norm;
 
-    // Direct DOM manipulation — bypasses React for 60fps
+    // CSS matrix transform — GPU-composited by the browser compositor thread
     if (mapGroupRef.current) {
-      mapGroupRef.current.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${k.toFixed(4)})`);
+      const ctm = ctmRef.current;
+      if (ctm) {
+        const cssX = ctm.a * x + ctm.e * (1 - k);
+        const cssY = ctm.a * y + ctm.f * (1 - k);
+        mapGroupRef.current.style.transform = `matrix(${k},0,0,${k},${cssX.toFixed(2)},${cssY.toFixed(2)})`;
+      } else {
+        mapGroupRef.current.setAttribute('transform', `translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${k.toFixed(4)})`);
+      }
     }
 
     // Update buttons immediately when entering or leaving a zoom limit
@@ -266,8 +274,18 @@ const didDragRef      = useRef(false);
     },
   }), [applyTransform]);
 
+  // ── Seed CTM on mount + re-apply on resize (must come after applyTransform) ─
   useEffect(() => {
-    applyTransform(transformRef.current);
+    const seedAndApply = () => {
+      requestAnimationFrame(() => {
+        const ctm = svgRef.current?.getScreenCTM();
+        if (ctm) ctmRef.current = { a: ctm.a, e: ctm.e, f: ctm.f };
+        applyTransform(transformRef.current);
+      });
+    };
+    seedAndApply();
+    window.addEventListener('resize', seedAndApply);
+    return () => window.removeEventListener('resize', seedAndApply);
   }, [applyTransform]);
 
   const cancelInertia = useCallback(() => {
