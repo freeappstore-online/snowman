@@ -63,6 +63,47 @@ const ADM0_TO_NUMERIC: Record<string, string> = {
   TON: '776', TUV: '798', VAT: '336',
 };
 
+// ─── Memoized fill layer — skipped entirely during pan/zoom ───────────────
+interface FillLayerProps {
+  paths: Array<{ key: number; id: string; d: string }>;
+  borders: string;
+  stage: number;
+  snowSet: Set<string>;
+  onCountryClick?: (id: string) => void;
+  mouseDownOnMap: React.MutableRefObject<boolean>;
+  didDragRef: React.MutableRefObject<boolean>;
+}
+
+const FillLayer = React.memo(function FillLayer({
+  paths, borders, stage, snowSet, onCountryClick, mouseDownOnMap, didDragRef,
+}: FillLayerProps) {
+  return (
+    <>
+      {([-1, 0, 1] as const).map(offset => (
+        <g key={offset} transform={`translate(${offset * W},0)`}>
+          {paths.map(({ key, d, id }) => (
+            <path
+              key={`${offset}-${key}`}
+              d={d}
+              fill={stage === 1 && snowSet.has(id) ? '#4ade80' : '#3f3f46'}
+              fillOpacity={stage === 1 ? 1 : 0.22}
+              stroke="none"
+              strokeWidth={0.5}
+              vectorEffect="non-scaling-stroke"
+              className="cursor-pointer"
+              onMouseUp={() => { if (mouseDownOnMap.current && !didDragRef.current && onCountryClick) onCountryClick(id); }}
+              onTouchEnd={(e) => { if (!didDragRef.current && onCountryClick) { e.preventDefault(); onCountryClick(id); } }}
+            />
+          ))}
+          {stage === 1 && borders && (
+            <path d={borders} fill="none" stroke="#111" strokeWidth={0.5} vectorEffect="non-scaling-stroke" className="pointer-events-none" />
+          )}
+        </g>
+      ))}
+    </>
+  );
+});
+
 // ─── Projection helpers ────────────────────────────────────────────────────
 const projection = geoMercator()
   .scale(W / (2 * Math.PI))
@@ -200,7 +241,7 @@ const didDragRef      = useRef(false);
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = window.setTimeout(() => {
       setTransform({ ...transformRef.current });
-    }, 150);
+    }, 400);
   }, []);
 
   const clientToSvg = useCallback((cx: number, cy: number): [number, number] => {
@@ -458,37 +499,18 @@ const didDragRef      = useRef(false);
         onTouchEnd={onTouchEnd}
         aria-label="World snow map"
       >
-        <g ref={mapGroupRef}>
+        <g ref={mapGroupRef} style={{ willChange: 'transform' }}>
 
-          {/* ── Layer 1: Country fills ───────────────────────────────────── */}
-          {([-1, 0, 1] as const).map(offset => (
-            <g key={offset} transform={`translate(${offset * W},0)`}>
-              {paths.map(({ key, d, id }) => (
-                <path
-                  key={`${offset}-${key}`}
-                  d={d}
-                  fill={stage === 1 && snowSet.has(id) ? '#4ade80' : '#3f3f46'}
-                  fillOpacity={stage === 1 ? 1 : 0.22}
-                  stroke="none"
-                  strokeWidth={0.5}
-                  vectorEffect="non-scaling-stroke"
-                  style={{ cursor: dragging ? 'grabbing' : 'pointer' }}
-                  onMouseUp={() => { if (mouseDownOnMap.current && !didDragRef.current && onCountryClick) onCountryClick(id); }}
-                  onTouchEnd={(e) => { if (!didDragRef.current && onCountryClick) { e.preventDefault(); onCountryClick(id); } }}
-                />
-              ))}
-              {stage === 1 && borders && (
-                <path
-                  d={borders}
-                  fill="none"
-                  stroke="#111"
-                  strokeWidth={0.5}
-                  vectorEffect="non-scaling-stroke"
-                  className="pointer-events-none"
-                />
-              )}
-            </g>
-          ))}
+          {/* ── Layer 1: Country fills (memoized — skipped during pan/zoom) ─ */}
+          <FillLayer
+            paths={paths}
+            borders={borders}
+            stage={stage}
+            snowSet={snowSet}
+            onCountryClick={onCountryClick}
+            mouseDownOnMap={mouseDownOnMap}
+            didDragRef={didDragRef}
+          />
 
           {/* ── Layer 2: State/province fills (stage 2+) ─────────────────── */}
           {stage > 1 && ([-1, 0, 1] as const).map(offset => (
