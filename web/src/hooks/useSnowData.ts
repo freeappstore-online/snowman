@@ -71,6 +71,26 @@ export const SAMPLE_POINTS: [string, number, number][] = [
   ['840',  40.84, -99.46], // USA — Nebraska Goldilocks peak 21.00
   ['858', -33.98, -55.44], // Uruguay
   ['860',  42.20,  70.99], // Uzbekistan
+  // Additional snow-capable countries (total kept under 95)
+  ['020',  42.55,   1.60], // Andorra — Pyrenees
+  ['031',  41.38,  48.48], // Azerbaijan — Greater Caucasus
+  ['051',  40.37,  44.50], // Armenia — Aragats foothills
+  ['070',  43.73,  17.62], // Bosnia and Herzegovina — Bjelašnica (Olympic)
+  ['112',  53.71,  27.95], // Belarus
+  ['233',  59.44,  24.75], // Estonia
+  ['383',  42.20,  20.96], // Kosovo — Šar Mountains
+  ['422',  34.17,  36.08], // Lebanon — Cedars ski area
+  ['426', -29.61,  28.23], // Lesotho — Sani Pass
+  ['428',  57.19,  24.42], // Latvia
+  ['438',  47.14,   9.55], // Liechtenstein
+  ['442',  49.82,   6.13], // Luxembourg — Ardennes
+  ['498',  47.41,  28.37], // Moldova
+  ['499',  42.46,  18.77], // Montenegro — Durmitor
+  ['688',  43.31,  20.81], // Serbia — Kopaonik
+  ['703',  49.21,  20.21], // Slovakia — High Tatras
+  ['705',  46.36,  13.84], // Slovenia — Julian Alps
+  ['795',  37.88,  58.37], // Turkmenistan — Kopet Dag
+  ['807',  41.61,  21.75], // North Macedonia — Šar Mountains
 ];
 
 interface SnowDataResult {
