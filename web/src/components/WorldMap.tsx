@@ -5,6 +5,8 @@ import type { FeatureCollection, Feature, Polygon, MultiPolygon } from 'geojson'
 import { geoMercator, geoPath } from 'd3-geo';
 import { useStateSnow } from '../hooks/useStateSnow';
 import { SAMPLE_POINTS } from '../hooks/useSnowData';
+import { useResorts } from '../hooks/useResorts';
+import { COUNTRY_BY_ID, COUNTRY_EXTENT_POINTS } from '../lib/countries';
 
 const SNOW_SAMPLE: Record<string, { lat: number; lon: number }> = Object.fromEntries(
   SAMPLE_POINTS.map(([id, lat, lon]) => [id, { lat, lon }])
@@ -14,7 +16,7 @@ const WORLD_URL  = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.jso
 const STATES_URL = '/states.json';
 const W = 1000;
 const MIN_K = 1;
-const MAX_K = 40;
+const MAX_K = 150;
 const MIN_FETCH_K = 2.0; // pre-load states.json before any threshold is hit
 
 
@@ -70,32 +72,37 @@ interface FillLayerProps {
   borders: string;
   stage: number;
   snowSet: Set<string>;
+  queryingCountries: Set<string>;
+  fadingCountries: Set<string>;
   onCountryClick?: (id: string) => void;
   mouseDownOnMap: React.MutableRefObject<boolean>;
   didDragRef: React.MutableRefObject<boolean>;
 }
 
 const FillLayer = React.memo(function FillLayer({
-  paths, borders, stage, snowSet, onCountryClick, mouseDownOnMap, didDragRef,
+  paths, borders, stage, snowSet, queryingCountries, fadingCountries, onCountryClick, mouseDownOnMap, didDragRef,
 }: FillLayerProps) {
   return (
     <>
       {([-1, 0, 1] as const).map(offset => (
         <g key={offset} transform={`translate(${offset * W},0)`}>
-          {paths.map(({ key, d, id }) => (
-            <path
-              key={`${offset}-${key}`}
-              d={d}
-              fill={stage === 1 && snowSet.has(id) ? '#4ade80' : '#3f3f46'}
-              fillOpacity={stage === 1 ? 1 : 0.22}
-              stroke="none"
-              strokeWidth={0.5}
-              vectorEffect="non-scaling-stroke"
-              className="cursor-pointer"
-              onMouseUp={() => { if (mouseDownOnMap.current && !didDragRef.current && onCountryClick) onCountryClick(id); }}
-              onTouchEnd={(e) => { if (!didDragRef.current && onCountryClick) { e.preventDefault(); onCountryClick(id); } }}
-            />
-          ))}
+          {paths.map(({ key, d, id }) => {
+            const querying = stage === 1 && queryingCountries.has(id);
+            const fading  = stage === 1 && !querying && fadingCountries.has(id);
+            return (
+              <path
+                key={`${offset}-${key}`}
+                d={d}
+                fill={stage === 1 && snowSet.has(id) ? '#4ade80' : '#3f3f46'}
+                fillOpacity={stage === 1 ? 1 : 0.22}
+                stroke="none"
+                vectorEffect="non-scaling-stroke"
+                className={`cursor-pointer country-path${querying ? ' country-scanning' : fading ? ' country-fading' : ''}`}
+                onMouseUp={() => { if (mouseDownOnMap.current && !didDragRef.current && onCountryClick) onCountryClick(id); }}
+                onTouchEnd={(e) => { if (!didDragRef.current && onCountryClick) { e.preventDefault(); onCountryClick(id); } }}
+              />
+            );
+          })}
           {stage === 1 && borders && (
             <path d={borders} fill="none" stroke="#111" strokeWidth={0.5} vectorEffect="non-scaling-stroke" className="pointer-events-none" />
           )}
@@ -137,18 +144,33 @@ function computeClip(cW: number, cH: number) {
 
 interface FocusedCountry { id: string; name: string; lat: number; lon: number }
 
+const CLUSTER_RADIUS = 20; // screen pixels at which resorts merge into a cluster
+
+interface ClusteredPoint {
+  id: string; x: number; y: number;
+  count: number; name: string;
+  spanX: number; spanY: number; // bounding box of member resorts — used to compute break-apart zoom
+}
+
 interface Props {
   snowSet: Set<string>;
+  queryingCountries: Set<string>;
+  fadingCountries: Set<string>;
   focusedCountry: FocusedCountry | null;
+  focusedState: { stateId: string; name: string } | null;
   onCountryClick?: (id: string) => void;
+  onStateClick?: (stateId: string, name: string) => void;
   onOceanClick?: () => void;
+  onSnowError?: () => void;
+  onSnowLoad?: () => void;
 }
 
 export interface WorldMapHandle {
   panTo: (lat: number, lon: number, zoom?: number) => void;
+  fitToCountry: (id: string) => void;
 }
 
-export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, focusedCountry, onCountryClick, onOceanClick }, ref) {
+export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ snowSet, queryingCountries, fadingCountries, focusedCountry, focusedState, onCountryClick, onStateClick, onOceanClick, onSnowError, onSnowLoad }, ref) {
   const focusedCountryId = focusedCountry?.id ?? null;
   const [countries,  setCountries]  = useState<FeatureCollection<Polygon | MultiPolygon> | null>(null);
   const [borders,    setBorders]    = useState<string>('');
@@ -157,6 +179,7 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
   const [transform,  setTransform]  = useState<XYK>({ x: 0, y: 0, k: 1 });
   const [dragging,   setDragging]   = useState(false);
   const [wide,       setWide]       = useState(() => window.innerWidth >= 560);
+  const [wider370,   setWider370]   = useState(() => window.innerWidth >= 370);
 
   const transformRef = useRef<XYK>({ x: 0, y: 0, k: 1 });
   const clipRef      = useRef(computeClip(window.innerWidth, window.innerHeight));
@@ -170,13 +193,15 @@ export const WorldMap = forwardRef<WorldMapHandle, Props>(function WorldMap({ sn
 const didDragRef      = useRef(false);
   const statesLoadedRef = useRef(false);
   const mapGroupRef     = useRef<SVGGElement>(null);
-  const syncTimerRef    = useRef<number | null>(null);
+  const resortsLayerRef = useRef<SVGGElement>(null);
+  const rafSyncRef      = useRef<number | null>(null);
 
   // ── Resize ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const update = () => {
       clipRef.current = computeClip(window.innerWidth, window.innerHeight);
       setWide(window.innerWidth >= 560);
+      setWider370(window.innerWidth >= 370);
     };
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
@@ -241,19 +266,32 @@ const didDragRef      = useRef(false);
       mapGroupRef.current.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${k.toFixed(4)})`;
     }
 
-    // Only trigger React re-render when crossing a zoom limit boundary, not on every frame
+    if (resortsLayerRef.current) {
+      resortsLayerRef.current.querySelectorAll('circle').forEach(c => {
+        const base = parseFloat(c.getAttribute('data-base-r') ?? '5');
+        c.setAttribute('r', (base / k).toFixed(3));
+      });
+    }
+
+    // Immediately sync state when hitting zoom limits (keeps +/− buttons accurate)
     const atMin = k <= MIN_K;
     const atMax = k >= MAX_K;
     const wasMin = prevK <= MIN_K;
     const wasMax = prevK >= MAX_K;
     if (atMin !== wasMin || atMax !== wasMax) {
+      if (rafSyncRef.current) { cancelAnimationFrame(rafSyncRef.current); rafSyncRef.current = null; }
       setTransform(norm);
+      return;
     }
 
-    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-    syncTimerRef.current = window.setTimeout(() => {
-      setTransform({ ...transformRef.current });
-    }, 400);
+    // Throttle transform state (pan/cull) to one RAF per frame — keeps viewport culling live
+    if (!rafSyncRef.current) {
+      rafSyncRef.current = requestAnimationFrame(() => {
+        rafSyncRef.current = null;
+        setTransform({ ...transformRef.current });
+      });
+    }
+
   }, []);
 
   const clientToSvg = useCallback((cx: number, cy: number): [number, number] => {
@@ -276,7 +314,49 @@ const didDragRef      = useRef(false);
       const k = Math.max(MIN_K, Math.min(MAX_K, zoom));
       applyTransform({ x: W / 2 - svgX * k, y: W / 2 - svgY * k, k });
     },
-  }), [applyTransform]);
+    fitToCountry(id: string) {
+      const c = COUNTRY_BY_ID.get(id);
+      if (!c) return;
+
+      const [cx, cy] = project(c.lon, c.lat);
+      let k = 5;
+
+      const extents = COUNTRY_EXTENT_POINTS.get(id);
+      if (extents && extents.length > 0) {
+        // Large/antimeridian countries: measure spread from extent points, bypassing D3's wrap bug
+        let maxDx = 0, maxDy = 0;
+        for (const [elat, elon] of extents) {
+          const [px, py] = project(elon, elat);
+          let distX = Math.abs(px - cx);
+          if (distX > W / 2) distX = W - distX;
+          if (distX > maxDx) maxDx = distX;
+          if (Math.abs(py - cy) > maxDy) maxDy = Math.abs(py - cy);
+        }
+        const dx = Math.max(maxDx * 2, 1);
+        const dy = Math.max(maxDy * 2, 1);
+        const sw = window.innerWidth, sh = window.innerHeight;
+        const visW = sw >= sh ? W * (sw / sh) : W;
+        const visH = sw >= sh ? W : W * (sh / sw);
+        k = Math.min(visW / dx, visH / dy) * 0.70;
+      } else if (countries) {
+        // Standard country: safe to use D3 bounds
+        const feature = countries.features.find(f => String(f.id ?? '').padStart(3, '0') === id);
+        if (feature) {
+          const [[x0, y0], [x1, y1]] = pathGenerator.bounds(feature as Parameters<typeof pathGenerator>[0]);
+          const dx = x1 - x0, dy = y1 - y0;
+          const sw = window.innerWidth, sh = window.innerHeight;
+          const visW = sw >= sh ? W * (sw / sh) : W;
+          const visH = sw >= sh ? W : W * (sh / sw);
+          k = Math.min(visW / Math.max(dx, 1), visH / Math.max(dy, 1)) * 0.70;
+        }
+      }
+
+      // Cap auto-zoom so tiny countries don't pixelate
+      k = Math.min(12, k);
+      k = Math.max(MIN_K, Math.min(MAX_K, k));
+      applyTransform({ x: W / 2 - cx * k, y: W / 2 - cy * k, k });
+    },
+  }), [applyTransform, countries]);
 
   // ── Re-apply transform on resize to recompute y clamp ────────────────────
   useEffect(() => {
@@ -426,7 +506,8 @@ const didDragRef      = useRef(false);
 
   function onMouseUp(e: React.MouseEvent<SVGSVGElement>) {
     if (!mouseDownOnMap.current) return;
-    const isOcean = !didDragRef.current && (e.target as SVGElement).tagName !== 'path';
+    const tag = (e.target as SVGElement).tagName;
+    const isOcean = !didDragRef.current && tag !== 'path' && tag !== 'circle';
     if (dragStart.current) startInertia();
     dragStart.current = null;
     lastMoveRef.current = null;
@@ -444,7 +525,8 @@ const didDragRef      = useRef(false);
   }
 
   function onTouchEnd(e: React.TouchEvent<SVGSVGElement>) {
-    const isOcean = !didDragRef.current && (e.target as SVGElement).tagName !== 'path';
+    const tag = (e.target as SVGElement).tagName;
+    const isOcean = !didDragRef.current && tag !== 'path' && tag !== 'circle';
     if (dragStart.current) startInertia();
     dragStart.current = null;
     pinchRef.current = null;
@@ -468,6 +550,7 @@ const didDragRef      = useRef(false);
       key: i,
       d: featureToD(f as Feature<Polygon | MultiPolygon>),
       stateId: `${f.properties.a}|${f.properties.n}`,
+      name: f.properties.n as string,
       adm0: f.properties.a,
       lat: f.properties.t,
       lon: f.properties.g,
@@ -492,11 +575,98 @@ const didDragRef      = useRef(false);
     return states;
   }, [visibleStatePaths, focusedCountry, focusedCountryId]);
 
-  const { snowMap: stateSnowMap, loading: stateLoading } = useStateSnow(visibleStates, focusedCountryId);
+  const { snowMap: stateSnowMap, loading: stateLoading, error: stateSnowError } = useStateSnow(visibleStates, focusedCountryId);
+
+  useEffect(() => {
+    if (stateSnowError) onSnowError?.();
+  }, [stateSnowError, onSnowError]);
+
+  useEffect(() => {
+    if (!stateLoading && !stateSnowError && stateSnowMap.size > 0) onSnowLoad?.();
+  }, [stateLoading, stateSnowError, stateSnowMap, onSnowLoad]);
 
   const stage = focusedCountryId ? 2 : 1;
 
+  const focusedCountryFeature = useMemo(() => {
+    if (!focusedCountryId || !countries) return null;
+    return countries.features.find(f => String(f.id ?? '').padStart(3, '0') === focusedCountryId) ?? null;
+  }, [focusedCountryId, countries]);
+
+  const focusedStateFeature = useMemo(() => {
+    if (!focusedState?.stateId || !statesData) return null;
+    return statesData.features.find(
+      f => `${(f as StateFeature).properties.a}|${(f as StateFeature).properties.n}` === focusedState.stateId
+    ) ?? null;
+  }, [focusedState?.stateId, statesData]);
+
+  // Only fall back to country-level resorts when statesData is loaded AND has no states
+  // for this country — never while statesData is still null (would flash all country dots)
+  const hasStates = visibleStatePaths.length > 0;
+  const resortFeature = focusedStateFeature ?? (statesData && !hasStates ? focusedCountryFeature : null);
+
+  const countryResorts = useResorts(resortFeature as any);
+
+  const projectedResorts = useMemo(() => {
+    return countryResorts.map(r => {
+      const [x, y] = project(r.lon, r.lat);
+      return { ...r, x, y };
+    });
+  }, [countryResorts]);
+
   const { k } = transform;
+  // Snap k to powers-of-2 so clusters only reorganize at clean thresholds (1,2,4,8,16…)
+  // rather than every RAF frame — responsive but no fighting
+  const quantizedK = Math.pow(2, Math.round(Math.log2(k)));
+
+  const clusteredResorts = useMemo((): ClusteredPoint[] => {
+    if (!projectedResorts.length) return [];
+    const cellSize = CLUSTER_RADIUS / quantizedK;
+    const cells = new Map<string, typeof projectedResorts>();
+    for (const resort of projectedResorts) {
+      const key = `${Math.floor(resort.x / cellSize)},${Math.floor(resort.y / cellSize)}`;
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key)!.push(resort);
+    }
+    return Array.from(cells.entries()).map(([key, resorts]) => {
+      const cx = resorts.reduce((s, r) => s + r.x, 0) / resorts.length;
+      const cy = resorts.reduce((s, r) => s + r.y, 0) / resorts.length;
+      const single = resorts.length === 1;
+      const minX = single ? cx : Math.min(...resorts.map(r => r.x));
+      const maxX = single ? cx : Math.max(...resorts.map(r => r.x));
+      const minY = single ? cy : Math.min(...resorts.map(r => r.y));
+      const maxY = single ? cy : Math.max(...resorts.map(r => r.y));
+      return {
+        id: single ? resorts[0]!.id : `cluster-${key}`,
+        x: cx, y: cy,
+        count: resorts.length,
+        name: single ? resorts[0]!.name : `${resorts.length} resorts`,
+        spanX: maxX - minX,
+        spanY: maxY - minY,
+      };
+    });
+  }, [projectedResorts, quantizedK]);
+
+  const visibleClusters = useMemo(() => {
+    if (!clusteredResorts.length) return clusteredResorts;
+    const { x, y, k: tk } = transform;
+    const sw = window.innerWidth, sh = window.innerHeight;
+    // Outer SVG user unit range visible on screen (preserveAspectRatio=xMidYMid slice)
+    const xLeft  = sw >= sh ? 0 : W * (1 - sw / sh) / 2;
+    const xRight = sw >= sh ? W : W * (1 + sw / sh) / 2;
+    const { yTop, yBot } = clipRef.current;
+    const buf = 50 / tk;
+    const minX = (xLeft  - x) / tk - buf;
+    const maxX = (xRight - x) / tk + buf;
+    const minY = (yTop - y) / tk - buf;
+    const maxY = (yBot  - y) / tk + buf;
+    return clusteredResorts.filter(c =>
+      c.y >= minY && c.y <= maxY &&
+      ([-1, 0, 1] as const).some(offset => {
+        const cx = c.x + offset * W;
+        return cx >= minX && cx <= maxX;
+      })
+    );
+  }, [clusteredResorts, transform, wide]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -522,6 +692,8 @@ const didDragRef      = useRef(false);
             borders={borders}
             stage={stage}
             snowSet={snowSet}
+            queryingCountries={queryingCountries}
+            fadingCountries={fadingCountries}
             onCountryClick={onCountryClick}
             mouseDownOnMap={mouseDownOnMap}
             didDragRef={didDragRef}
@@ -547,16 +719,19 @@ const didDragRef      = useRef(false);
                   hasSnow = sampleSnow ?? false;
                 }
 
+                const isFocusedState = focusedState?.stateId === s.stateId;
                 return (
                   <path
                     key={s.key}
                     d={s.d}
-                    fill={hasSnow ? '#4ade80' : '#2a2a2e'}
-                    fillOpacity={0.93}
-                    stroke="rgba(255,255,255,0.45)"
-                    strokeWidth={0.6}
+                    fill={isFocusedState ? '#1c3347' : ((!focusedState && hasSnow) ? '#4ade80' : '#2a2a2e')}
+                    fillOpacity={1}
+                    stroke={isFocusedState ? '#38bdf8' : 'rgba(255,255,255,0.45)'}
+                    strokeWidth={isFocusedState ? 2 : 0.6}
                     vectorEffect="non-scaling-stroke"
-                    className="pointer-events-none"
+                    className="cursor-pointer"
+                    onMouseUp={() => { if (mouseDownOnMap.current && !didDragRef.current) onStateClick?.(s.stateId, s.name); }}
+                    onTouchEnd={e => { if (!didDragRef.current) { e.preventDefault(); onStateClick?.(s.stateId, s.name); } }}
                   />
                 );
               })}
@@ -565,7 +740,7 @@ const didDragRef      = useRef(false);
 
           {/* ── Layer 3: Country outlines on top of state fills ───────────── */}
           {stage > 1 && ([-1, 0, 1] as const).map(offset => (
-            <g key={offset} transform={`translate(${offset * W},0)`}>
+            <g key={`ol-${offset}`} transform={`translate(${offset * W},0)`}>
               {paths.map(({ key, d, id }) => {
                 const isFocused = id === focusedCountryId;
                 return (
@@ -583,13 +758,67 @@ const didDragRef      = useRef(false);
             </g>
           ))}
 
+          {/* ── Layer 4: Ski resort dots — only when a state is selected (or statesData confirms no states) */}
+          <g ref={resortsLayerRef}>
+            {stage > 1 && (focusedState || (statesData !== null && !hasStates)) && ([-1, 0, 1] as const).map(offset => (
+              <g key={`resorts-${offset}`} transform={`translate(${offset * W},0)`}>
+                {visibleClusters.map(point => {
+                  const isCluster = point.count > 1;
+                  return (
+                    <g key={point.id}>
+                      {/* visible dot */}
+                      <circle
+                        cx={point.x}
+                        cy={point.y}
+                        data-base-r={window.innerWidth < 560 ? '11' : '5'}
+                        r={(window.innerWidth < 560 ? 11 : 5) / transformRef.current.k}
+                        fill="#38bdf8"
+                        stroke="#ffffff"
+                        strokeWidth={3}
+                        vectorEffect="non-scaling-stroke"
+                        className="pointer-events-none"
+                      />
+                      {/* invisible tap target */}
+                      <circle
+                        cx={point.x}
+                        cy={point.y}
+                        r={22 / transformRef.current.k}
+                        fill="transparent"
+                        className={`pointer-events-auto ${isCluster ? 'cursor-zoom-in' : 'cursor-default'}`}
+                        onMouseUp={() => {
+                          if (!mouseDownOnMap.current || didDragRef.current || !isCluster) return;
+                          const span = Math.max(point.spanX, point.spanY);
+                          if (span < 1e-4) return;
+                          const rawK = (CLUSTER_RADIUS * 2) / span;
+                          const newK = Math.min(MAX_K, Math.pow(2, Math.ceil(Math.log2(rawK))));
+                          applyTransform({ x: W / 2 - point.x * newK, y: W / 2 - point.y * newK, k: newK });
+                        }}
+                        onTouchEnd={e => {
+                          if (didDragRef.current || !isCluster) return;
+                          e.preventDefault();
+                          const span = Math.max(point.spanX, point.spanY);
+                          if (span < 1e-4) return;
+                          const rawK = (CLUSTER_RADIUS * 2) / span;
+                          const newK = Math.min(MAX_K, Math.pow(2, Math.ceil(Math.log2(rawK))));
+                          applyTransform({ x: W / 2 - point.x * newK, y: W / 2 - point.y * newK, k: newK });
+                        }}
+                      >
+                        <title>{point.name}</title>
+                      </circle>
+                    </g>
+                  );
+                })}
+              </g>
+            ))}
+          </g>
+
         </g>
       </svg>
 
       {/* Zoom controls */}
       <div
         className="absolute right-4 flex flex-col bg-[rgba(15,15,15,0.88)] border border-white/[0.12] rounded-lg overflow-hidden"
-        style={{ bottom: wide || focusedCountry ? 16 : 48 }}
+        style={{ bottom: wider370 || focusedCountry ? 16 : 48 }}
       >
         {[{ label: '+', f: 1.5, atLimit: k >= MAX_K }, { label: '−', f: 1 / 1.5, atLimit: k <= MIN_K }].map(({ label, f, atLimit }, i) => (
           <React.Fragment key={label}>
@@ -610,22 +839,39 @@ const didDragRef      = useRef(false);
         ))}
       </div>
 
-      {/* Legend */}
-      <aside
+      {/* Legend — only shown when viewing a country */}
+      {focusedCountry && <aside
         className="absolute left-4 flex flex-col gap-1.5 bg-[rgba(15,15,15,0.88)] border border-white/10 rounded-xl py-2 px-3"
-        style={{ bottom: wide || focusedCountry ? 16 : 48 }}
+        style={{ bottom: 16 }}
       >
-        {[{ color: '#2a2a2e', label: 'No snow' }, { color: '#4ade80', label: 'Snow' }].map(({ color, label }) => (
-          <span key={label} className="flex items-center gap-2 text-xs text-[#a1a1aa]">
-            <span className="w-[10px] h-[10px] rounded-[2px] shrink-0" style={{ background: color }} />
-            {label}
-          </span>
-        ))}
-      </aside>
+        {focusedState ? (
+          <>
+            <span className="flex items-center gap-2 text-xs text-[#a1a1aa]">
+              <span className="w-[14px] flex items-center justify-center shrink-0">
+                <span className="w-[10px] h-[10px] rounded-[2px]" style={{ background: '#1c3347', border: '1px solid #38bdf8' }} />
+              </span>
+              Selected
+            </span>
+            <span className="flex items-center gap-2 text-xs text-[#a1a1aa]">
+              <svg width="14" height="14" viewBox="0 0 14 14" className="shrink-0">
+                <circle cx="7" cy="7" r="5" fill="#38bdf8" stroke="#ffffff" strokeWidth="1.5" />
+              </svg>
+              Snow resort
+            </span>
+          </>
+        ) : (
+          [{ color: '#2a2a2e', label: 'No snow' }, { color: '#4ade80', label: 'Snow' }].map(({ color, label }) => (
+            <span key={label} className="flex items-center gap-2 text-xs text-[#a1a1aa]">
+              <span className="w-[10px] h-[10px] rounded-[2px] shrink-0" style={{ background: color }} />
+              {label}
+            </span>
+          ))
+        )}
+      </aside>}
 
       {(!countries || stateLoading) && !mapError && (
         <div className="absolute inset-0 flex items-center justify-center bg-[rgba(0,0,0,0.55)] pointer-events-none">
-          <span className="text-[#a1a1aa] text-sm">
+          <span className="text-[#a1a1aa] text-sm text-pulsing">
             {!countries ? 'Loading map…' : 'Fetching snow data…'}
           </span>
         </div>

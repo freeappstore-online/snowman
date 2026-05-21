@@ -48,11 +48,13 @@ loadStoredCache();
 export function useStateSnow(visibleStates: StateMeta[], focusedCountryId: string | null) {
   const [snowMap, setSnowMap] = useState<Map<string, boolean>>(new Map());
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
 
   // Clear in-memory cache whenever the focused country changes so every search queries fresh
   useEffect(() => {
     resultCache.clear();
     setSnowMap(new Map());
+    setError(false);
   }, [focusedCountryId]);
 
   useEffect(() => {
@@ -122,8 +124,9 @@ export function useStateSnow(visibleStates: StateMeta[], focusedCountryId: strin
         });
         persistEntries(newEntries);
         setSnowMap(updated);
-      } catch {
-        // Silently ignore aborts and errors
+      } catch (e) {
+        if (!ctrl.signal.aborted) setError(true);
+        void e;
       } finally {
         if (!ctrl.signal.aborted) setLoading(false);
       }
@@ -132,5 +135,5 @@ export function useStateSnow(visibleStates: StateMeta[], focusedCountryId: strin
     return () => { ctrl.abort(); setLoading(false); };
   }, [visibleStates]);
 
-  return { snowMap, loading };
+  return { snowMap, loading, error };
 }
