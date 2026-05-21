@@ -47,12 +47,41 @@
   }
 }
 
+html {
+  overflow: hidden;
+  touch-action: none;
+}
+
 body {
   margin: 0;
+  overflow: hidden;
+  touch-action: none;
   background: var(--paper);
   color: var(--ink);
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes text-pulse {
+  0%, 100% { color: #a1a1aa; }
+  50%       { color: #e4e4e7; }
+}
+
+.text-pulsing {
+  animation: text-pulse 1.6s ease-in-out infinite;
+}
+
+.country-path {
+  transition: fill 0.65s ease-out;
+}
+
+.country-scanning {
+  fill: #8a8a96 !important;
+  transition: fill 0.15s ease-out !important;
+}
+
+.country-fading {
+  transition: fill 0.65s ease-out !important;
 }
