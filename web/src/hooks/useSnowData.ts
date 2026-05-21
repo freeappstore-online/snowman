@@ -91,6 +91,16 @@ export const SAMPLE_POINTS: [string, number, number][] = [
   ['705',  46.36,  13.84], // Slovenia — Julian Alps
   ['795',  37.88,  58.37], // Turkmenistan — Kopet Dag
   ['807',  41.61,  21.75], // North Macedonia — Šar Mountains
+  // Regional points for large countries — improves accuracy for Snow Near Me
+  ['840',  44.27,  -71.33], // USA — White Mountains NH (Northeast)
+  ['840',  39.48, -106.04], // USA — Summit County CO (Rockies)
+  ['840',  38.93, -119.96], // USA — Lake Tahoe CA (Sierra Nevada)
+  ['124',  50.11, -122.96], // Canada — Whistler BC
+  ['124',  46.21,  -74.59], // Canada — Mont-Tremblant QC
+  ['124',  51.18, -115.57], // Canada — Banff AB
+  ['156',  44.08,  128.11], // China — Changbai Mountain JL (Northeast ski hub)
+  ['643',  43.68,   40.23], // Russia — Rosa Khutor Sochi (Caucasus, near Europe)
+  ['392',  43.12,  141.35], // Japan — Sapporo Hokkaido (heaviest snowfall)
 ];
 
 interface SnowDataResult {

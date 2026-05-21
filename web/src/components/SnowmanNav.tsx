@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { COUNTRIES, COUNTRY_BY_ID, COUNTRY_EXTENT_POINTS, type Country } from '../lib/countries';
+import { COUNTRIES, COUNTRY_BY_ID, COUNTRY_EXTENT_POINTS, COUNTRY_NEIGHBORS, type Country } from '../lib/countries';
 import { SAMPLE_POINTS } from '../hooks/useSnowData';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -15,12 +15,14 @@ const inputCls = 'w-full bg-transparent border-0 outline-none text-[#f5f5f5] tex
 
 interface Props {
   panTo: (lat: number, lon: number, zoom?: number) => void;
+  fitToCountry: (id: string) => void;
   snowSet: Set<string>;
   onFocusCountry: (c: { id: string; name: string; lat: number; lon: number } | null) => void;
   focusedCountry: { id: string } | null;
+  onQueryingCountries: (ids: Set<string>) => void;
 }
 
-export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: Props) {
+export function SnowmanNav({ panTo, fitToCountry, snowSet, onFocusCountry, focusedCountry, onQueryingCountries }: Props) {
   const [query, setQuery]             = useState('');
   const [showAbout, setShowAbout]     = useState(false);
   const [showNearMe, setShowNearMe]   = useState(false);
@@ -95,10 +97,16 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
 
   useEffect(() => {
     if (!showNearMe && !showAbout) return;
-    const onWheel = () => { setShowNearMe(false); setShowAbout(false); };
-    window.addEventListener('wheel', onWheel, { passive: true });
-    return () => window.removeEventListener('wheel', onWheel);
+    const onDown = (e: MouseEvent) => {
+      const inside = nearMePanelRef.current?.contains(e.target as Node)
+                  || aboutPanelRef.current?.contains(e.target as Node)
+                  || navHeaderRef.current?.contains(e.target as Node);
+      if (!inside) { setShowNearMe(false); setShowAbout(false); }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
   }, [showNearMe, showAbout]);
+
 
   function saveToHistory(id: string) {
     setHistory(prev => {
@@ -114,44 +122,122 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
     if (!origin || nearMeSearching) return;
 
     setNearMeSearching(true);
+    onFocusCountry(null);
+    panTo(origin.lat, origin.lon, 1);
     try {
-      const sorted = SAMPLE_POINTS
-        .map(([id, lat, lon]) => {
-          const centroid = COUNTRY_BY_ID.get(id);
-          const centroidDist = centroid ? haversineKm(origin.lat, origin.lon, centroid.lat, centroid.lon) : Infinity;
-          const sampleDist = haversineKm(origin.lat, origin.lon, lat, lon);
-          const extentDist = Math.min(...(COUNTRY_EXTENT_POINTS.get(id) ?? []).map(([elat, elon]) => haversineKm(origin.lat, origin.lon, elat, elon)), Infinity);
-          return { id, lat, lon, dist: Math.min(centroidDist, sampleDist, extentDist) };
-        })
-        .sort((a, b) => a.dist - b.dist);
+      const visited = new Set<string>([origin.id]);
+      const queue: string[] = [origin.id];
+      const BATCH_SIZE = 10;
 
-      const lats = sorted.map(p => p.lat.toFixed(4)).join(',');
-      const lons = sorted.map(p => p.lon.toFixed(4)).join(',');
-      const r = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=snow_depth&forecast_days=1&timezone=auto`
-      );
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data = await r.json();
-      const results: unknown[] = Array.isArray(data) ? data : [data];
+      const month = new Date().getMonth();
+      const seasonMagnet = (month >= 10 || month <= 3) ? 1 : -1;
 
-      const hasOriginSnow = sorted.some((p, i) =>
-        p.id === origin.id &&
-        ((results[i] as { current?: { snow_depth?: number } })?.current?.snow_depth ?? 0) > 0
-      );
-      if (hasOriginSnow) { selectCountry(origin); setShowNearMe(false); return; }
+      const getScore = (id: string) => {
+        const c = COUNTRY_BY_ID.get(id);
+        if (!c) return Infinity;
+        const dist = haversineKm(origin.lat, origin.lon, c.lat, c.lon);
+        return dist - (snowSet.has(id) ? 1500 : 0) - (c.lat * seasonMagnet * 15);
+      };
 
-      for (let i = 0; i < sorted.length; i++) {
-        if (sorted[i]?.id === origin.id) continue;
-        const depth = (results[i] as { current?: { snow_depth?: number } })?.current?.snow_depth ?? 0;
-        if (depth > 0) {
-          const country = COUNTRY_BY_ID.get(sorted[i]?.id ?? '');
-          if (country) { selectCountry(country); setShowNearMe(false); return; }
+      let bestSnowCountry: ReturnType<typeof COUNTRY_BY_ID.get> = undefined;
+      let bestSnowScore = Infinity;
+
+      while (queue.length > 0) {
+        queue.sort((a, b) => getScore(a) - getScore(b));
+
+        // True A* stopping: only stop once best candidate beats everything left in queue
+        if (bestSnowCountry && bestSnowScore <= getScore(queue[0]!)) {
+          selectCountry(bestSnowCountry);
+          setShowNearMe(false);
+          break;
         }
+
+        const batchIds = queue.splice(0, BATCH_SIZE);
+        onQueryingCountries(new Set(batchIds));
+
+        const GOLD_RATIO = 150000;
+        const MAX_POINTS_PER_COUNTRY = 15;
+        const batchPoints: { id: string; lat: number; lon: number }[] = [];
+
+        for (const id of batchIds) {
+          const rawPts: { id: string; lat: number; lon: number }[] = [];
+          SAMPLE_POINTS.filter(p => p[0] === id).forEach(p => rawPts.push({ id, lat: p[1], lon: p[2] }));
+          (COUNTRY_EXTENT_POINTS.get(id) ?? []).forEach(([lat, lon]) => rawPts.push({ id, lat, lon }));
+
+          if (rawPts.length <= 1) { batchPoints.push(...rawPts); continue; }
+
+          const lats = rawPts.map(p => p.lat);
+          const lons = rawPts.map(p => p.lon);
+          const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+          const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+          const estArea = haversineKm(minLat, minLon, minLat, maxLon) * haversineKm(minLat, minLon, maxLat, minLon);
+          const allowed = Math.min(MAX_POINTS_PER_COUNTRY, Math.max(1, Math.ceil(estArea / GOLD_RATIO)));
+
+          if (rawPts.length <= allowed) {
+            batchPoints.push(...rawPts);
+          } else {
+            batchPoints.push(rawPts[0]!);
+            const step = (rawPts.length - 1) / (allowed - 1);
+            for (let i = 1; i < allowed; i++) batchPoints.push(rawPts[Math.floor(i * step)]!);
+          }
+        }
+
+        if (batchPoints.length > 0) {
+          const lats = batchPoints.map(p => p.lat.toFixed(4)).join(',');
+          const lons = batchPoints.map(p => p.lon.toFixed(4)).join(',');
+          const r = await fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=snow_depth&forecast_days=1&timezone=auto`
+          );
+          if (r.ok) {
+            const data = await r.json();
+            const results: unknown[] = Array.isArray(data) ? data : [data];
+            for (let j = 0; j < batchPoints.length; j++) {
+              const depth = (results[j] as { current?: { snow_depth?: number } })?.current?.snow_depth ?? 0;
+              if (depth > 0) {
+                const cId = batchPoints[j]!.id;
+                const cScore = getScore(cId);
+                if (cScore < bestSnowScore) {
+                  bestSnowScore = cScore;
+                  bestSnowCountry = COUNTRY_BY_ID.get(cId);
+                }
+              }
+            }
+          }
+        }
+
+        for (const id of batchIds) {
+          for (const n of (COUNTRY_NEIGHBORS[id] ?? [])) {
+            if (!visited.has(n)) {
+              visited.add(n);
+              queue.push(n);
+            }
+          }
+        }
+
+        // Ocean gap fallback
+        if (queue.length === 0 && !bestSnowCountry) {
+          let closest: string | null = null;
+          let minDist = Infinity;
+          for (const [id, lat, lon] of SAMPLE_POINTS) {
+            if (!visited.has(id)) {
+              const d = haversineKm(origin.lat, origin.lon, lat, lon);
+              if (d < minDist) { minDist = d; closest = id; }
+            }
+          }
+          if (closest) { visited.add(closest); queue.push(closest); }
+        }
+
+        // Only pause when we actually hit the API — ghost through tropical batches instantly
+        if (batchPoints.length > 0) await new Promise(res => setTimeout(res, 300));
       }
+
+      // Queue drained with a candidate but never hit the stopping condition
+      if (bestSnowCountry) { selectCountry(bestSnowCountry); setShowNearMe(false); }
     } catch {
-      // Network error — silently ignore
+      // Network error gracefully ignored
     } finally {
       setNearMeSearching(false);
+      onQueryingCountries(new Set());
     }
   }
 
@@ -174,7 +260,7 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
   const flatItems = useMemo(() => dropdownSections.flatMap(s => s.items), [dropdownSections]);
 
   function selectCountry(c: Country) {
-    panTo(c.lat, c.lon, 5);
+    fitToCountry(c.id);
     saveToHistory(c.id);
     onFocusCountry({ id: c.id, name: c.name, lat: c.lat, lon: c.lon });
     setQuery('');
@@ -212,7 +298,7 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
             else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, -1)); }
             else if (e.key === 'Enter') { e.preventDefault(); const c = flatItems[activeIndex]; if (c) selectCountry(c); }
           }}
-          placeholder={suffix ? '' : 'Search countries…'}
+          placeholder={suffix ? '' : 'Enter a country to view snow...'}
           className={inputCls}
         />
       </div>
@@ -306,12 +392,15 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
         }
       >
         {/* Brand */}
-        <span
-          className="font-extrabold text-[1rem] tracking-[-0.01em] shrink-0 pr-[0.4rem]"
+        <a
+          href="https://freeappstore.online/apps/snowman"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-extrabold text-[1rem] tracking-[-0.01em] shrink-0 pr-[0.4rem] no-underline"
           style={{ fontFamily: 'Fraunces, serif', background: 'linear-gradient(to bottom, #87ceeb, #ffffff)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}
         >
           Snowman
-        </span>
+        </a>
 
         <div className="w-px h-5 bg-white/[0.12] shrink-0" />
 
@@ -384,7 +473,6 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
       )}
 
       {/* Snow Near Me panel */}
-      {showNearMe && <div className="fixed inset-0 z-[198]" onMouseDown={() => setShowNearMe(false)} />}
       {showNearMe && (
         <div ref={nearMePanelRef} className={`${glass} rounded-[1rem] absolute top-16 z-[199] p-2 pb-[0.35rem]`} style={panelPos}>
           <div className={`flex gap-[0.4rem] ${!wide ? 'relative' : ''}`}>
@@ -448,7 +536,6 @@ export function SnowmanNav({ panTo, snowSet, onFocusCountry, focusedCountry }: P
       )}
 
       {/* About panel */}
-      {showAbout && <div className="fixed inset-0 z-[198]" onMouseDown={() => setShowAbout(false)} />}
       {showAbout && (
         <div ref={aboutPanelRef} className={`${glass} rounded-[1rem] absolute top-16 z-[199] p-[1.1rem] px-[1.25rem] max-h-[calc(100dvh-80px)] overflow-y-auto`} style={panelPos}>
           <h2 className="text-[1.1rem] font-extrabold text-[#f5f5f5] mt-0 mb-2" style={{ fontFamily: 'Fraunces, serif' }}>
