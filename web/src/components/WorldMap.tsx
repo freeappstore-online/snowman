@@ -702,39 +702,52 @@ const didDragRef      = useRef(false);
           {/* ── Layer 2: State/province fills (stage 2+) ─────────────────── */}
           {stage > 1 && ([-1, 0, 1] as const).map(offset => (
             <g key={`st-${offset}`} transform={`translate(${offset * W},0)`}>
-              {visibleStatePaths.map(s => {
-                const numericCode = ADM0_TO_NUMERIC[s.adm0] ?? '';
-                const sampleSnow = stateSnowMap.get(`${numericCode}|sample`);
+              {hasStates ? (
+                visibleStatePaths.map(s => {
+                  const numericCode = ADM0_TO_NUMERIC[s.adm0] ?? '';
+                  const sampleSnow = stateSnowMap.get(`${numericCode}|sample`);
 
-                let hasSnow = stateSnowMap.get(s.stateId);
+                  let hasSnow = stateSnowMap.get(s.stateId);
 
-                if (hasSnow === false && sampleSnow) {
-                  const sp = SNOW_SAMPLE[numericCode];
-                  if (sp && Math.hypot(s.lon - sp.lon, s.lat - sp.lat) < 2.5) {
-                    hasSnow = true;
+                  if (hasSnow === false && sampleSnow) {
+                    const sp = SNOW_SAMPLE[numericCode];
+                    if (sp && Math.hypot(s.lon - sp.lon, s.lat - sp.lat) < 2.5) {
+                      hasSnow = true;
+                    }
                   }
-                }
 
-                if (hasSnow === undefined) {
-                  hasSnow = sampleSnow ?? false;
-                }
+                  if (hasSnow === undefined) {
+                    hasSnow = sampleSnow ?? false;
+                  }
 
-                const isFocusedState = focusedState?.stateId === s.stateId;
-                return (
+                  const isFocusedState = focusedState?.stateId === s.stateId;
+                  return (
+                    <path
+                      key={s.key}
+                      d={s.d}
+                      fill={isFocusedState ? '#1c3347' : ((!focusedState && hasSnow) ? '#4ade80' : '#2a2a2e')}
+                      fillOpacity={1}
+                      stroke={isFocusedState ? '#38bdf8' : 'rgba(255,255,255,0.45)'}
+                      strokeWidth={isFocusedState ? 2 : 0.6}
+                      vectorEffect="non-scaling-stroke"
+                      className="cursor-pointer"
+                      onMouseUp={() => { if (mouseDownOnMap.current && !didDragRef.current) onStateClick?.(s.stateId, s.name); }}
+                      onTouchEnd={e => { if (!didDragRef.current) { e.preventDefault(); onStateClick?.(s.stateId, s.name); } }}
+                    />
+                  );
+                })
+              ) : (
+                focusedCountryFeature && (
                   <path
-                    key={s.key}
-                    d={s.d}
-                    fill={isFocusedState ? '#1c3347' : ((!focusedState && hasSnow) ? '#4ade80' : '#2a2a2e')}
+                    d={featureToD(focusedCountryFeature as Feature<Polygon | MultiPolygon>)}
+                    fill={(stateSnowMap.get(`${focusedCountryId}|sample`) || stateSnowMap.get(`${focusedCountryId}|whole`)) ? '#4ade80' : '#2a2a2e'}
                     fillOpacity={1}
-                    stroke={isFocusedState ? '#38bdf8' : 'rgba(255,255,255,0.45)'}
-                    strokeWidth={isFocusedState ? 2 : 0.6}
+                    stroke="rgba(255,255,255,0.45)"
+                    strokeWidth={0.6}
                     vectorEffect="non-scaling-stroke"
-                    className="cursor-pointer"
-                    onMouseUp={() => { if (mouseDownOnMap.current && !didDragRef.current) onStateClick?.(s.stateId, s.name); }}
-                    onTouchEnd={e => { if (!didDragRef.current) { e.preventDefault(); onStateClick?.(s.stateId, s.name); } }}
                   />
-                );
-              })}
+                )
+              )}
             </g>
           ))}
 
