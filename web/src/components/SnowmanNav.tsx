@@ -467,7 +467,7 @@ export function SnowmanNav({ panTo, fitToCountry, snowSet, onFocusCountry, focus
       )}
       {!wide && searchOpen && (
         <div className={`${glass} absolute top-16 z-[199] rounded-[1rem] max-h-[calc(100dvh-80px)] flex flex-col`} style={panelPos}>
-          <div className="p-2 pb-[0.35rem] shrink-0">{searchInput(true, true)}</div>
+          <div className="p-2 shrink-0">{searchInput(true, true)}</div>
           <div className="overflow-y-auto">{renderSections()}</div>
         </div>
       )}
