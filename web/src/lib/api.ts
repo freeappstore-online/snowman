@@ -33,8 +33,8 @@ export async function fetchGitHubToken(): Promise<string | null> {
   }
 }
 
-export async function getSignInUrl(redirect: string): Promise<string> {
-  const res = await fetch(`${API_URL}/auth/github/url?redirect=${encodeURIComponent(redirect)}`, { credentials: "include" });
+export async function getSignInUrl(redirect: string, provider: 'github' | 'google' = 'github'): Promise<string> {
+  const res = await fetch(`${API_URL}/auth/${provider}/url?redirect=${encodeURIComponent(redirect)}`, { credentials: "include" });
   const data = await res.json();
   return data.url;
 }

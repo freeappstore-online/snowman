@@ -63,9 +63,14 @@ export function Create() {
           <p className="text-lg mb-8 text-[var(--muted)] max-w-[480px]">
             Describe the app you want. An AI agent builds it, deploys it, and you get a live app on FreeAppStore — in minutes.
           </p>
-          <button onClick={signIn} className="inline-flex items-center gap-2 px-6 py-3 rounded-full font-semibold text-white bg-[var(--accent)]">
-            Sign in with GitHub to start
-          </button>
+          <div className="flex flex-col items-center gap-3">
+            <button onClick={() => signIn('github')} className="inline-flex items-center gap-2 px-6 py-3 rounded-full font-semibold text-white bg-[var(--accent)]">
+              Sign in with GitHub
+            </button>
+            <button onClick={() => signIn('google')} className="inline-flex items-center gap-2 px-6 py-3 rounded-full font-semibold text-white bg-[var(--accent)]">
+              Sign in with Google
+            </button>
+          </div>
           <p className="text-sm mt-3 text-[var(--muted)]">Free to use. AI runs through GitHub Models — no API key needed.</p>
         </main>
       </>

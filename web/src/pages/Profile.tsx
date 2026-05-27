@@ -23,12 +23,20 @@ export function Profile() {
     return (
       <><Nav /><div className="container py-16 text-center">
         <p className="mb-4 text-[var(--muted)]">Sign in to view your profile.</p>
-        <button
-          onClick={signIn}
-          className="px-5 py-2 rounded-xl text-sm font-semibold border border-[var(--line)] bg-transparent text-[var(--ink)] cursor-pointer"
-        >
-          Sign in with GitHub
-        </button>
+        <div className="flex justify-center gap-3">
+          <button
+            onClick={() => signIn('github')}
+            className="px-5 py-2 rounded-xl text-sm font-semibold border border-[var(--line)] bg-transparent text-[var(--ink)] cursor-pointer"
+          >
+            Sign in with GitHub
+          </button>
+          <button
+            onClick={() => signIn('google')}
+            className="px-5 py-2 rounded-xl text-sm font-semibold border border-[var(--line)] bg-transparent text-[var(--ink)] cursor-pointer"
+          >
+            Sign in with Google
+          </button>
+        </div>
       </div></>
     );
   }

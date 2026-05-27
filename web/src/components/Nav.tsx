@@ -53,12 +53,21 @@ export function Nav() {
               />
             </Link>
           ) : (
-            <button
-              onClick={signIn}
-              className="text-sm font-semibold text-[var(--accent)] bg-transparent border-0 cursor-pointer"
-            >
-              Sign in
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => signIn('github')}
+                className="text-sm font-semibold text-[var(--accent)] bg-transparent border-0 cursor-pointer"
+              >
+                GitHub
+              </button>
+              <span className="text-xs text-[var(--muted)]">|</span>
+              <button
+                onClick={() => signIn('google')}
+                className="text-sm font-semibold text-[var(--accent)] bg-transparent border-0 cursor-pointer"
+              >
+                Google
+              </button>
+            </div>
           )}
         </nav>
 
@@ -115,12 +124,20 @@ export function Nav() {
                 <span className="text-sm font-semibold text-[var(--ink)]">{user.name}</span>
               </Link>
             ) : (
-              <button
-                onClick={() => { setMenuOpen(false); signIn(); }}
-                className="mt-4 text-sm font-semibold text-[var(--accent)] bg-transparent border-0 cursor-pointer text-left"
-              >
-                Sign in
-              </button>
+              <div className="mt-4 flex flex-col gap-2">
+                <button
+                  onClick={() => { setMenuOpen(false); signIn('github'); }}
+                  className="text-sm font-semibold text-[var(--accent)] bg-transparent border-0 cursor-pointer text-left"
+                >
+                  Sign in with GitHub
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); signIn('google'); }}
+                  className="text-sm font-semibold text-[var(--accent)] bg-transparent border-0 cursor-pointer text-left"
+                >
+                  Sign in with Google
+                </button>
+              </div>
             )}
           </nav>
         </>

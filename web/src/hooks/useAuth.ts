@@ -6,7 +6,7 @@ interface AuthContextValue {
   loading: boolean;
   hasGitHubModels: boolean;
   githubToken: string | null;
-  signIn: () => Promise<void>;
+  signIn: (provider?: 'github' | 'google') => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -49,8 +49,8 @@ export function useAuthProvider(): AuthContextValue {
     })();
   }, []);
 
-  const signIn = useCallback(async () => {
-    const url = await getSignInUrl(window.location.href);
+  const signIn = useCallback(async (provider?: 'github' | 'google') => {
+    const url = await getSignInUrl(window.location.href, provider);
     window.location.href = url;
   }, []);
 
